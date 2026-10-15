@@ -1,0 +1,22 @@
+{
+  "name": "lams-agent",
+  "version": "1.0.0",
+  "description": "LAMS HQ: Personal Creator Operations Center & AI Workforce",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts",
+    "dev": "node --experimental-strip-types src/index.ts",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "googleapis": "^144.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@vercel/node": "^3.2.33",
+    "typescript": "^5.8.2"
+  }
+}

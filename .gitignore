@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Secrets & Environment Variables (NEVER commit credentials)
+.env
+.env.local
+.env.*.local
+
+# Runtime Assets & Caches
+cache/
+output/
+test_output/
+watched_exports/
+dist/
+.vercel/
+
+# Logs & System Files
+*.log
+.DS_Store
+Thumbs.db

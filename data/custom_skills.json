@@ -1,0 +1,70 @@
+[
+  {
+    "schemaVersion": "1.0",
+    "id": "publish_instagram_teaser",
+    "name": "Publish Instagram Teaser",
+    "version": "1.0.0",
+    "description": "Synthesized skill compiled from 4 demonstration actions in Instagram Web.",
+    "executionMode": "browser_agent",
+    "inputs": {
+      "text_field_3": {
+        "type": "string",
+        "description": "Text entered for Title Field",
+        "required": true
+      }
+    },
+    "preconditions": [
+      "target_application_accessible"
+    ],
+    "approvalGate": {
+      "required": true,
+      "level": "2_approval_gate",
+      "prompt": "Review proposed execution parameters before Publish Instagram Teaser executes."
+    },
+    "actions": [
+      {
+        "step": 1,
+        "name": "Navigate to Content / Library",
+        "action": "browser.navigate",
+        "parameters": {
+          "target": "Instagram Web Main View"
+        }
+      },
+      {
+        "step": 2,
+        "name": "Click Select Video File",
+        "action": "ui.click",
+        "parameters": {
+          "target": "Select Video File"
+        }
+      },
+      {
+        "step": 3,
+        "name": "Enter Title Field",
+        "action": "form.fill_text",
+        "parameters": {
+          "field": "Title Field",
+          "valueKey": "text_field_3"
+        }
+      },
+      {
+        "step": 4,
+        "name": "Click Publish / Schedule",
+        "action": "ui.click",
+        "parameters": {
+          "target": "Publish / Schedule"
+        }
+      }
+    ],
+    "verification": {
+      "postconditions": [
+        "target_screen_state_matches_final_demonstration"
+      ],
+      "proofRequired": true
+    },
+    "failureRecovery": {
+      "maxRetries": 2,
+      "alertLevel": "medium"
+    }
+  }
+]
