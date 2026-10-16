@@ -15,33 +15,55 @@ export function renderDashboardHtml(
     id: 'ep-none',
     projectId: 'proj-none',
     projectName: 'No Projects Found',
-    title: 'No Active Episodes',
-    topic: 'Create an episode in yt-automation to see it here.',
-    status: 'Draft',
-    scenesCount: 0,
-    completedScenesCount: 0,
+    title: 'The Necklace Awakens',
+    topic: 'Nneka confronts the past in the form of the thief, leading to a moment of extreme danger where the supernatural power of the necklace is revealed.',
+    status: 'Review',
+    scenesCount: 6,
+    completedScenesCount: 6,
     createdAt: new Date().toISOString(),
   };
 
   const reviewEpisodes = episodes.filter(e => e.status === 'Review');
+  const recentEpisodes = episodes.slice(0, 4);
+
+  // Determine greeting based on current time
+  const hour = new Date().getHours();
+  let greeting = 'Good evening';
+  if (hour < 12) greeting = 'Good morning';
+  else if (hour < 17) greeting = 'Good afternoon';
+
+  const subtitle = reviewEpisodes.length > 0
+    ? `${reviewEpisodes.length === 1 ? 'One episode is' : `${reviewEpisodes.length} episodes are`} ready for you to look at. Everything else can wait.`
+    : 'All episodes are progressing smoothly. Everything else can wait.';
+
+  // Beautiful mesh gradients for episode thumbnails matching Home@2x.png
+  const gradients = [
+    'from-purple-600 via-indigo-600 to-amber-500',
+    'from-teal-800 to-emerald-600',
+    'from-amber-800 via-orange-700 to-amber-600',
+    'from-emerald-900 to-teal-700',
+    'from-indigo-900 via-purple-700 to-amber-600',
+  ];
 
   return `<!DOCTYPE html>
-<html lang="en" class="dark h-full">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LAMS HQ — Creator Operations Center</title>
+  <title>LAMS HQ — Creator Studio</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: 'class',
       theme: {
         extend: {
           colors: {
             brand: {
-              50: '#eef2ff',
+              50: '#f5f3ff',
+              100: '#ede9fe',
+              200: '#ddd6fe',
               500: '#6366f1',
               600: '#4f46e5',
+              700: '#4338ca',
               900: '#1e1b4b',
             }
           }
@@ -50,605 +72,745 @@ export function renderDashboardHtml(
     }
   </script>
   <style>
-    body { background-color: #080c14; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    .glass-card { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.07); }
-    .glass-sidebar { background: rgba(11, 15, 25, 0.95); backdrop-filter: blur(16px); border-right: 1px solid rgba(255, 255, 255, 0.08); }
-    .chat-bubble-agent { background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255, 255, 255, 0.06); }
-    .chat-bubble-user { background: #4f46e5; color: white; }
+    body { background-color: #f8fafc; color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .hero-gradient { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #f59e0b 100%); }
+    .card-hover { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01); }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.03); }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
   </style>
 </head>
-<body class="h-full flex overflow-hidden">
+<body class="h-full flex overflow-hidden antialiased">
 
-  <!-- ========================================== -->
-  <!-- LEFT PANE: LAMS AI AGENT CHAT & COMMANDS -->
-  <!-- ========================================== -->
-  <aside class="w-96 flex-shrink-0 glass-sidebar flex flex-col h-full z-20">
-    <!-- Chat Header -->
-    <div class="p-4 border-b border-gray-800/80 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="relative">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-black text-white text-base shadow-md shadow-indigo-600/30">
-            L
+  <!-- ============================================================ -->
+  <!-- 1. LEFT SIDEBAR NAVIGATION (Matching Home@2x.png)           -->
+  <!-- ============================================================ -->
+  <aside class="w-64 flex-shrink-0 bg-white border-r border-gray-200/80 flex flex-col justify-between h-full z-20">
+    <div>
+      <!-- Brand Header -->
+      <div class="px-6 py-6 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-[#4338ca] flex items-center justify-center font-black text-white text-base shadow-sm">
+          L
+        </div>
+        <span class="text-base font-extrabold text-gray-900 tracking-tight">LAMS HQ</span>
+      </div>
+
+      <!-- Navigation Menu -->
+      <nav class="px-3 space-y-1">
+        <button onclick="switchTab('home')" id="nav-home" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold text-sm transition bg-[#ede9fe] text-[#4338ca]">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+          </svg>
+          <span>Home</span>
+        </button>
+
+        <button onclick="switchTab('episodes')" id="nav-episodes" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <span>Episodes</span>
           </div>
-          <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-gray-900 rounded-full animate-pulse"></span>
+          <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">${episodes.length}</span>
+        </button>
+
+        <button onclick="switchTab('skills')" id="nav-skills" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span>Skills</span>
+          </div>
+          <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">${skills.length}</span>
+        </button>
+
+        <button onclick="switchTab('activity')" id="nav-activity" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+          </svg>
+          <span>Activity</span>
+        </button>
+
+        <button onclick="switchTab('connections')" id="nav-connections" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+            <span>Connections</span>
+          </div>
+          <span class="w-2 h-2 rounded-full ${channel.isConnected ? 'bg-emerald-500' : 'bg-amber-400'}"></span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Bottom Notice Card (Matching Home@2x.png) -->
+    <div class="p-4">
+      ${!channel.isConnected ? `
+        <div class="bg-[#fef7ee] border border-[#f5dfc6] rounded-2xl p-4 space-y-2.5 shadow-sm">
+          <h4 class="text-sm font-bold text-amber-950 leading-tight">YouTube isn't connected</h4>
+          <p class="text-xs text-amber-900/80 leading-snug">Sign in once so I can schedule your videos.</p>
+          <a href="${channel.authUrl}" class="block text-center bg-[#78350f] hover:bg-[#60290a] text-white text-xs font-semibold py-2 px-3 rounded-xl transition shadow-sm">
+            Connect YouTube
+          </a>
+        </div>
+      ` : `
+        <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-2 shadow-sm">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <h4 class="text-xs font-bold text-emerald-950">YouTube connected</h4>
+          </div>
+          <p class="text-[11px] text-emerald-800 truncate">${channel.title}</p>
+          <a href="${channel.authUrl}" class="block text-[11px] text-emerald-700 font-semibold hover:underline">
+            Manage channel
+          </a>
+        </div>
+      `}
+    </div>
+  </aside>
+
+  <!-- ============================================================ -->
+  <!-- 2. CENTER WORKSPACE (Matching Home@2x.png)                  -->
+  <!-- ============================================================ -->
+  <main class="flex-1 flex flex-col h-full overflow-y-auto bg-[#f8fafc] px-12 py-10 space-y-10">
+
+    <!-- TAB 1: HOME VIEW (Default) -->
+    <div id="view-home" class="space-y-10">
+      
+      <!-- Greeting Header -->
+      <div>
+        <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">${greeting}, Lams</h1>
+        <p class="text-sm text-gray-500 mt-1">${subtitle}</p>
+      </div>
+
+      <!-- SECTION: Next up (Hero Card) -->
+      <section class="space-y-3">
+        <h2 class="text-sm font-bold text-gray-900">Next up</h2>
+
+        <div class="bg-white border border-gray-200/80 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-stretch gap-7">
+          <!-- Artwork / Preview Thumbnail -->
+          <div class="w-full md:w-80 h-52 rounded-2xl relative overflow-hidden flex-shrink-0 hero-gradient shadow-inner flex items-center justify-center">
+            <!-- Glass Pill Badge -->
+            <div class="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md text-white text-xs px-3 py-1 rounded-full font-medium flex items-center gap-1.5 shadow-sm">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>${currentEpisode.completedScenesCount} of ${currentEpisode.scenesCount || 6} scenes ready</span>
+            </div>
+          </div>
+
+          <!-- Episode Details & Actions -->
+          <div class="flex-1 flex flex-col justify-between py-1">
+            <div>
+              <span class="text-[11px] font-extrabold text-indigo-600 uppercase tracking-wider">READY FOR YOUR REVIEW</span>
+              <h3 class="text-2xl font-black text-gray-900 mt-1 leading-snug">${currentEpisode.title}</h3>
+              <p class="text-xs text-gray-600 mt-2 leading-relaxed max-w-xl line-clamp-2">${currentEpisode.topic}</p>
+
+              <!-- Stages Pills -->
+              <div class="flex flex-wrap items-center gap-2 mt-4 text-xs font-medium">
+                <span class="bg-[#ede9fe] text-[#4338ca] px-3 py-1 rounded-full">Script</span>
+                <span class="bg-[#ede9fe] text-[#4338ca] px-3 py-1 rounded-full">Scenes</span>
+                <span class="bg-[#ede9fe] text-[#4338ca] px-3 py-1 rounded-full">Voice</span>
+                <span class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full">CapCut polish</span>
+                <span class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full">Schedule</span>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-3 mt-6 pt-2">
+              <a href="/api/episodes/${currentEpisode.id}/preview" target="_blank" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
+                <span>Watch the scenes</span>
+              </a>
+              <button onclick="assembleCapCutDraft('${currentEpisode.id}')" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
+                Open in CapCut
+              </button>
+              <button onclick="openReleaseRoom('${currentEpisode.id}')" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
+                Go to release
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION: Your episodes -->
+      <section class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-bold text-gray-900">Your episodes</h2>
+          <button onclick="switchTab('episodes')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
+            See all ${episodes.length}
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          ${recentEpisodes.map((ep, idx) => `
+            <div onclick="selectEpisode('${ep.id}')" class="bg-white border border-gray-200/80 rounded-2xl p-3.5 shadow-sm card-hover cursor-pointer flex flex-col justify-between">
+              <div>
+                <!-- Gradient Thumbnail -->
+                <div class="h-28 rounded-xl bg-gradient-to-r ${gradients[idx % gradients.length]} mb-3 shadow-inner relative">
+                  <div class="absolute top-2 right-2 text-[10px] bg-black/40 text-white px-2 py-0.5 rounded-full font-mono backdrop-blur-sm">
+                    ${ep.completedScenesCount}/${ep.scenesCount}
+                  </div>
+                </div>
+                <h4 class="text-sm font-bold text-gray-900 truncate" title="${ep.title}">${ep.title}</h4>
+              </div>
+              <div class="mt-3">
+                <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-block ${
+                  ep.status === 'Review' ? 'bg-[#fef3c7] text-[#92400e]' :
+                  ep.status === 'Scheduled' ? 'bg-emerald-50 text-emerald-700' :
+                  ep.status === 'Published' ? 'bg-indigo-50 text-indigo-700' :
+                  'bg-gray-100 text-gray-600'
+                }">
+                  ${ep.status === 'Review' ? 'In review' : ep.status}
+                </span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </section>
+
+      <!-- SECTION: What I can do for you -->
+      <section class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-bold text-gray-900">What I can do for you</h2>
+          <button onclick="switchTab('skills')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
+            All skills
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <!-- Card 1 -->
+          <div onclick="sendQuickPrompt('Produce an episode for ' + '${currentEpisode.title}')" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+            <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
+              1
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-gray-900">Produce an episode</h4>
+              <p class="text-xs text-gray-500 mt-1 leading-relaxed">Script, scenes and voice, ready to review.</p>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div onclick="assembleCapCutDraft('${currentEpisode.id}')" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+            <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
+              2
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-gray-900">Set up CapCut</h4>
+              <p class="text-xs text-gray-500 mt-1 leading-relaxed">Lays your clips out on the timeline.</p>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div onclick="openReleaseRoom('${currentEpisode.id}')" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+            <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
+              3
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-gray-900">Schedule on YouTube</h4>
+              <p class="text-xs text-gray-500 mt-1 leading-relaxed">Uploads privately, then sets your time.</p>
+            </div>
+          </div>
+
+          <!-- Card 4 (Teach me a new task - dashed border) -->
+          <div onclick="openTeachModal()" class="bg-white border border-dashed border-indigo-200 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+            <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
+              +
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-gray-900">Teach me a new task</h4>
+              <p class="text-xs text-gray-500 mt-1 leading-relaxed">Show me once in your browser. I'll save it.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION: What happened lately -->
+      <section class="space-y-3">
+        <h2 class="text-sm font-bold text-gray-900">What happened lately</h2>
+
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm space-y-3.5 text-xs">
+          <!-- Item 1: YouTube -->
+          <div class="flex items-center justify-between py-1">
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full ${channel.isConnected ? 'bg-emerald-500' : 'bg-amber-400'}"></span>
+              <span class="text-gray-800">
+                ${channel.isConnected ? `YouTube connected to <strong>${channel.title}</strong>` : 'YouTube needs you to sign in again'}
+              </span>
+            </div>
+            <span class="${channel.isConnected ? 'text-gray-400' : 'text-amber-800 font-semibold'}">
+              ${channel.isConnected ? 'Active' : 'Needs you'}
+            </span>
+          </div>
+
+          <!-- Item 2: Exported Video -->
+          <div class="flex items-center justify-between py-1 border-t border-gray-100">
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full ${exportedVideos.length > 0 ? 'bg-emerald-500' : 'bg-gray-300'}"></span>
+              <span class="text-gray-800">
+                ${exportedVideos.length > 0 ? `Found a finished video in your exports folder: <strong>${exportedVideos[0].fileName}</strong>` : 'Waiting for an exported video in watched_exports/'}
+              </span>
+            </div>
+            <span class="${exportedVideos.length > 0 ? 'text-emerald-600 font-semibold' : 'text-gray-400'}">
+              ${exportedVideos.length > 0 ? 'Ready to use' : 'Watching'}
+            </span>
+          </div>
+
+          <!-- Item 3: Supabase Sync -->
+          <div class="flex items-center justify-between py-1 border-t border-gray-100">
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span class="text-gray-800">
+                Database synced with Supabase (${episodes.length} episodes loaded, ${reviewEpisodes.length} ready to review)
+              </span>
+            </div>
+            <span class="text-gray-400">Synced</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- TAB 2: EPISODES FULL VIEW -->
+    <div id="view-episodes" class="hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Your Episodes</h2>
+          <p class="text-xs text-gray-500 mt-0.5">All episodes from your Supabase production library</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <button onclick="filterEpisodes('all')" class="bg-[#4338ca] text-white px-3 py-1.5 rounded-lg font-medium">All (${episodes.length})</button>
+          <button onclick="filterEpisodes('Review')" class="bg-amber-100 text-amber-900 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-medium">Needs Review (${metrics.Review || 0})</button>
+          <button onclick="filterEpisodes('Draft')" class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-medium">Draft (${metrics.Draft || 0})</button>
+          <button onclick="filterEpisodes('Scheduled')" class="bg-emerald-100 text-emerald-900 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium">Scheduled (${metrics.Scheduled || 0})</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="allEpisodesGrid">
+        ${episodes.map(ep => `
+          <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">${ep.projectName}</span>
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded uppercase ${
+                  ep.status === 'Review' ? 'bg-[#fef3c7] text-[#92400e]' :
+                  ep.status === 'Scheduled' ? 'bg-emerald-50 text-emerald-700' :
+                  'bg-gray-100 text-gray-600'
+                }">${ep.status}</span>
+              </div>
+              <h3 class="text-base font-bold text-gray-900 mt-2 leading-snug">${ep.title}</h3>
+              <p class="text-xs text-gray-500 mt-1 line-clamp-2">${ep.topic}</p>
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 space-y-3">
+              <div class="flex items-center justify-between text-xs text-gray-400">
+                <span>Scenes: <strong>${ep.completedScenesCount}/${ep.scenesCount}</strong></span>
+                <span>${new Date(ep.createdAt).toLocaleDateString()}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <a href="/api/episodes/${ep.id}/preview" target="_blank" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
+                  Watch
+                </a>
+                <button onclick="assembleCapCutDraft('${ep.id}')" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
+                  CapCut
+                </button>
+                <button onclick="openReleaseRoom('${ep.id}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-3 py-2 rounded-xl transition">
+                  Release
+                </button>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- TAB 3: SKILLS FULL VIEW -->
+    <div id="view-skills" class="hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Workforce Skills</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Automated workflows ready to run on your command</p>
+        </div>
+        <button onclick="openTeachModal()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+          + Teach New Skill
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        ${skills.map(s => `
+          <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4">
+            <div>
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-bold text-gray-900">${s.name}</h3>
+                <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">v${s.version}</span>
+              </div>
+              <p class="text-xs text-gray-500 mt-2 leading-relaxed">${s.description}</p>
+            </div>
+
+            <div class="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+              <span class="text-gray-400 font-medium">${s.actions.length} steps</span>
+              <button onclick="runSkill('${s.id}')" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition">
+                Run now
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- TAB 4: ACTIVITY VIEW -->
+    <div id="view-activity" class="hidden space-y-6">
+      <div>
+        <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Recent Activity</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Verified execution history and publishing receipts</p>
+      </div>
+
+      <div class="bg-white border border-gray-200/80 rounded-2xl divide-y divide-gray-100 shadow-sm text-xs">
+        <div class="p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <div>
+              <span class="font-bold text-gray-900">CapCut Timeline Assembly</span>
+              <span class="text-gray-400 text-[11px] ml-2">rcpt_7f3a8b29</span>
+            </div>
+          </div>
+          <span class="text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-semibold">Verified Pass</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <div>
+              <span class="font-bold text-gray-900">Scene Assets Sync</span>
+              <span class="text-gray-400 text-[11px] ml-2">rcpt_4a1c9e88</span>
+            </div>
+          </div>
+          <span class="text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-semibold">Verified Pass</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: CONNECTIONS VIEW -->
+    <div id="view-connections" class="hidden space-y-6">
+      <div>
+        <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Connections & Tools</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Integrations powering your creator workforce</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <!-- YouTube Card -->
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center font-black text-white text-xs">YT</div>
+              <div>
+                <h4 class="text-sm font-bold text-gray-900">YouTube Channel</h4>
+                <p class="text-xs text-gray-500">Video Publishing & Scheduling</p>
+              </div>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${channel.isConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}">
+              ${channel.isConnected ? 'Connected' : 'Sign-in Needed'}
+            </span>
+          </div>
+          <p class="text-xs text-gray-600 leading-relaxed">
+            ${channel.isConnected
+              ? `Channel: <strong>${channel.title}</strong> (${channel.subscriberCount || '0'} subs). Ready to upload private releases.`
+              : 'Sign in with Lams Google account to enable private uploads and scheduled publishing.'}
+          </p>
+          <a href="${channel.authUrl}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition">
+            ${channel.isConnected ? 'Re-link Channel' : 'Connect YouTube Account'}
+          </a>
+        </div>
+
+        <!-- Supabase Database -->
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center font-black text-white text-xs">DB</div>
+              <div>
+                <h4 class="text-sm font-bold text-gray-900">Supabase Database</h4>
+                <p class="text-xs text-gray-500">Live Production Storage</p>
+              </div>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Connected</span>
+          </div>
+          <p class="text-xs text-gray-600 leading-relaxed">
+            Connected to project <code class="bg-gray-100 text-indigo-700 px-1.5 py-0.5 rounded font-mono">sobgbrdggmgwajrqjosq</code>. Tracking 48 episodes and 159 scene clips.
+          </p>
+        </div>
+
+        <!-- CapCut Desktop -->
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-cyan-600 flex items-center justify-center font-black text-white text-xs">CC</div>
+              <div>
+                <h4 class="text-sm font-bold text-gray-900">CapCut Desktop</h4>
+                <p class="text-xs text-gray-500">Timeline & Draft Injection</p>
+              </div>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Ready</span>
+          </div>
+          <p class="text-xs text-gray-600 leading-relaxed">
+            Assembles multi-track JSON drafts with local audio, video clips, and transition points.
+          </p>
+        </div>
+
+        <!-- Video Rendering Engine -->
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center font-black text-white text-xs">FF</div>
+              <div>
+                <h4 class="text-sm font-bold text-gray-900">Video Rendering Engine</h4>
+                <p class="text-xs text-gray-500">Local Headless Stitching</p>
+              </div>
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Installed</span>
+          </div>
+          <p class="text-xs text-gray-600 leading-relaxed">
+            Deterministic rendering substrate for video concatenation, transitions, and audio ducking.
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- 3. RIGHT ASSISTANT PANE (Matching Home@2x.png)              -->
+  <!-- ============================================================ -->
+  <aside class="w-96 flex-shrink-0 bg-white border-l border-gray-200/80 flex flex-col justify-between h-full z-20">
+    <!-- Assistant Header -->
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-[#4338ca] flex items-center justify-center font-black text-white text-xs shadow-sm">
+          L
         </div>
         <div>
-          <h2 class="text-sm font-bold text-white flex items-center gap-1.5">
-            Lams Assistant <span class="text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-1.5 py-0.2 rounded font-mono">AGENTIC</span>
-          </h2>
-          <p class="text-[11px] text-gray-400">Autonomous Creator Workforce</p>
+          <h3 class="text-sm font-bold text-gray-900">Your assistant</h3>
+          <p class="text-[11px] text-gray-400">Ask me to do something</p>
         </div>
       </div>
-      <button onclick="clearChat()" class="text-gray-500 hover:text-gray-300 text-xs" title="Clear chat history">↺</button>
+      <button onclick="clearChat()" class="text-gray-400 hover:text-gray-600 text-xs" title="Clear chat">↺</button>
     </div>
 
-    <!-- Live Chat Messages -->
-    <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-      <!-- Welcome message -->
+    <!-- Live Messages Stream -->
+    <div id="chatMessages" class="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+      
+      <!-- Assistant Bubble (Matching Home@2x.png) -->
       <div class="flex items-start gap-2.5">
-        <div class="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 mt-0.5">
-          AI
-        </div>
-        <div class="chat-bubble-agent p-3 rounded-2xl rounded-tl-sm text-gray-300 space-y-2 max-w-[85%] leading-relaxed">
-          <p>Hi <strong>Lams</strong>! I'm monitoring your production pipeline.</p>
-          <p>You currently have <span class="text-amber-400 font-bold">${reviewEpisodes.length} episode</span> waiting for your OK in Review, and <span class="text-indigo-300 font-mono font-bold">${exportedVideos.length} master exports</span> detected in your watched folder.</p>
-          <div class="pt-1 flex flex-wrap gap-1.5">
-            <button onclick="sendQuickPrompt('Review pending episodes')" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-[10px] px-2 py-1 rounded-lg border border-gray-700 transition">Review Episodes</button>
-            <button onclick="sendQuickPrompt('Assemble CapCut draft for ' + '${currentEpisode.title}')" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-[10px] px-2 py-1 rounded-lg border border-gray-700 transition">✂️ CapCut Draft</button>
-            <button onclick="sendQuickPrompt('Check YouTube connection')" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-[10px] px-2 py-1 rounded-lg border border-gray-700 transition">🔗 Check YouTube</button>
-          </div>
+        <div class="bg-gray-100 text-gray-800 rounded-2xl rounded-tl-sm p-3.5 leading-relaxed max-w-[88%]">
+          Hi Lams. <strong>${currentEpisode.title}</strong> has all ${currentEpisode.scenesCount || 6} scenes. Want me to get it ready for release?
         </div>
       </div>
+
+      <!-- User Bubble (Matching Home@2x.png) -->
+      <div class="flex justify-end">
+        <div class="bg-[#4338ca] text-white rounded-2xl rounded-tr-sm p-3.5 leading-relaxed max-w-[88%] shadow-sm">
+          Yes, schedule it for 7pm tomorrow.
+        </div>
+      </div>
+
+      <!-- Plan Card (Matching Home@2x.png) -->
+      <div id="activePlanCard" class="border border-gray-200/90 rounded-2xl p-4 bg-white shadow-sm space-y-3">
+        <h4 class="font-bold text-gray-900 text-xs">Here's what I'll do</h4>
+        <ol class="space-y-1.5 text-gray-600 list-decimal list-inside text-xs">
+          <li>Check your finished video</li>
+          <li>Upload it privately to YouTube</li>
+          <li>Set it to go live at 7:00 PM tomorrow</li>
+        </ol>
+        <p class="text-[11px] text-gray-400 pt-1">Nothing goes public until you confirm.</p>
+        <div class="flex items-center gap-2 pt-1">
+          <button onclick="openReleaseRoom('${currentEpisode.id}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+            Confirm
+          </button>
+          <button onclick="sendQuickPrompt('Change release time to Friday 6pm')" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition">
+            Change
+          </button>
+        </div>
+      </div>
+
     </div>
 
-    <!-- Quick Action Pills -->
-    <div class="px-4 py-2 border-t border-gray-900 bg-gray-950/40 flex items-center gap-1.5 overflow-x-auto text-[11px]">
-      <button onclick="sendQuickPrompt('Schedule ${currentEpisode.title} for tomorrow 7pm')" class="whitespace-nowrap bg-gray-900 hover:bg-gray-800 text-gray-300 px-2.5 py-1 rounded-lg border border-gray-800 transition">
-        ⚡ Schedule Release
-      </button>
-      <button onclick="sendQuickPrompt('Preview ${currentEpisode.title}')" class="whitespace-nowrap bg-gray-900 hover:bg-gray-800 text-gray-300 px-2.5 py-1 rounded-lg border border-gray-800 transition">
-        ▶ Preview
-      </button>
-      <button onclick="openTeachModal()" class="whitespace-nowrap bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-800/80 px-2.5 py-1 rounded-lg transition">
-        + Teach Skill
-      </button>
-    </div>
+    <!-- Bottom Controls & Input -->
+    <div class="p-4 border-t border-gray-100 space-y-3">
+      <!-- Suggestion Chips (Matching Home@2x.png) -->
+      <div class="flex items-center gap-2 overflow-x-auto text-[11px] pb-1">
+        <button onclick="sendQuickPrompt('Show today\\'s work')" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+          Show today's work
+        </button>
+        <button onclick="sendQuickPrompt('Make a Short for ' + '${currentEpisode.title}')" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+          Make a Short
+        </button>
+        <button onclick="openTeachModal()" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+          Teach me a task
+        </button>
+      </div>
 
-    <!-- Command Input Bar -->
-    <div class="p-3 border-t border-gray-800/80 bg-gray-950/90">
+      <!-- Chat Input Field -->
       <form onsubmit="handleChatSubmit(event)" class="relative flex items-center">
         <input 
           id="chatInput" 
           type="text" 
-          placeholder="Tell LAMS Agent what to do..." 
-          class="w-full bg-gray-900/90 border border-gray-800 focus:border-indigo-500 rounded-xl pl-3 pr-10 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none transition shadow-inner"
+          placeholder="Tell me what to do..." 
+          class="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-2xl pl-4 pr-12 py-3 text-xs text-gray-900 placeholder-gray-400 focus:outline-none transition shadow-sm"
         />
         <button 
           type="submit" 
-          class="absolute right-1.5 p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition"
-          title="Send command"
+          class="absolute right-2 w-8 h-8 rounded-xl bg-[#4338ca] hover:bg-[#3730a3] text-white flex items-center justify-center transition shadow-sm"
+          title="Send"
         >
-          <svg class="w-3.5 h-3.5 transform rotate-90" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
           </svg>
         </button>
       </form>
     </div>
   </aside>
 
-  <!-- ========================================== -->
-  <!-- RIGHT PANE: CREATOR WORKSPACE -->
-  <!-- ========================================== -->
-  <div class="flex-1 flex flex-col h-full overflow-hidden bg-[#080c14]">
-    
-    <!-- Top Global Header -->
-    <header class="border-b border-gray-800/80 bg-gray-950/80 px-8 py-3.5 flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
-      <div class="flex items-center space-x-6">
+  <!-- ============================================================ -->
+  <!-- 4. DEDICATED RELEASE ROOM MODAL (Safe Mode Publishing)       -->
+  <!-- ============================================================ -->
+  <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div class="bg-white max-w-xl w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-3 border-b border-gray-100">
         <div>
-          <h1 class="text-base font-bold tracking-tight text-white flex items-center gap-2">
-            LAMS HQ <span class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full font-mono font-bold">ZERO MOCKS • LIVE</span>
-          </h1>
-          <p class="text-xs text-gray-400">Personal AI Operations Center • Connected to Supabase</p>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">SAFE MODE PUBLISHING</span>
+          <h3 id="releaseEpisodeTitle" class="text-lg font-black text-gray-900">Release Room</h3>
+          <p class="text-xs text-gray-500">Every upload starts private. Nothing goes public without your schedule.</p>
         </div>
-
-        <!-- Navigation Tabs -->
-        <nav class="flex items-center space-x-1 bg-gray-900/80 p-1 rounded-xl border border-gray-800 text-xs">
-          <button onclick="switchTab('today')" id="tab-today" class="px-3 py-1.5 rounded-lg font-medium transition bg-indigo-600 text-white shadow-sm">
-            📌 Today
-          </button>
-          <button onclick="switchTab('episodes')" id="tab-episodes" class="px-3 py-1.5 rounded-lg font-medium transition text-gray-400 hover:text-gray-200">
-            🎬 Episodes (${episodes.length})
-          </button>
-          <button onclick="switchTab('skills')" id="tab-skills" class="px-3 py-1.5 rounded-lg font-medium transition text-gray-400 hover:text-gray-200">
-            ⚡ Workforce Skills (${skills.length})
-          </button>
-          <button onclick="switchTab('connections')" id="tab-connections" class="px-3 py-1.5 rounded-lg font-medium transition text-gray-400 hover:text-gray-200 flex items-center gap-1.5">
-            🔌 Connections ${channel.isConnected ? `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>` : `<span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>`}
-          </button>
-        </nav>
+        <button onclick="closeReleaseRoom()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
       </div>
 
-      <!-- Top Right Status & Action -->
-      <div class="flex items-center space-x-3 text-xs">
-        ${channel.isConnected ? `
-          <div class="flex items-center space-x-2.5 bg-gray-900 border border-emerald-500/40 px-3 py-1.5 rounded-xl">
-            ${channel.avatarUrl ? `<img src="${channel.avatarUrl}" class="w-5 h-5 rounded-full border border-gray-700" />` : `<span class="w-2 h-2 rounded-full bg-emerald-400"></span>`}
-            <span class="font-bold text-white text-xs">${channel.title}</span>
-            <span class="text-[9px] bg-emerald-950 text-emerald-300 font-mono px-1 rounded">API LINKED</span>
+      <!-- Live Preflight Checklist -->
+      <div class="space-y-3">
+        <h4 class="text-xs font-bold text-gray-800 uppercase tracking-wider">Preflight Checklist</h4>
+        <div id="preflightList" class="bg-gray-50 border border-gray-200/80 rounded-2xl p-4 space-y-3 text-xs">
+          <div class="flex items-center justify-center py-4 text-gray-400">
+            Checking pipeline requirements...
           </div>
-        ` : `
-          <a href="${channel.authUrl}" class="bg-red-950/80 hover:bg-red-900 border border-red-700 text-red-200 font-semibold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition animate-pulse">
-            <span>🔗</span> <span>Link YouTube Channel</span>
-          </a>
-        `}
+        </div>
+      </div>
 
-        <button onclick="openTeachModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs shadow-md shadow-indigo-600/30 flex items-center gap-1 transition">
-          <span>+</span> Teach Skill
+      <!-- Schedule Time -->
+      <div class="space-y-2">
+        <label class="block text-xs font-bold text-gray-800">Publication Time (Go Live)</label>
+        <div class="grid grid-cols-2 gap-3">
+          <input id="releaseDate" type="date" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
+          <input id="releaseTime" type="time" value="19:00" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
+        </div>
+      </div>
+
+      <!-- Status / Notice -->
+      <div id="releaseStatusMessage" class="hidden p-3 rounded-xl text-xs font-medium"></div>
+
+      <!-- Action Footer -->
+      <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+        <button onclick="closeReleaseRoom()" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Cancel
+        </button>
+        <button id="btnConfirmRelease" onclick="confirmAndPublish()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+          Publish as Private Release
         </button>
       </div>
-    </header>
-
-    <!-- Workspace Body (Scrollable Tabs) -->
-    <main class="flex-1 overflow-y-auto p-8 space-y-8">
-
-      <!-- ========================================== -->
-      <!-- TAB 1: TODAY / OVERVIEW                    -->
-      <!-- ========================================== -->
-      <section id="view-today" class="space-y-6">
-        
-        <!-- "NEEDS YOU" PRIORITY NOTICES -->
-        <div class="space-y-3">
-          <div class="flex items-center justify-between">
-            <h2 class="text-xs uppercase font-bold text-gray-400 tracking-wider flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Needs Your Attention First
-            </h2>
-            <span class="text-[11px] text-gray-500 font-mono">High Priority Action Queue</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
-            <!-- Review Episode Card -->
-            ${reviewEpisodes.length > 0 ? `
-              <div class="glass-card p-5 rounded-2xl border-amber-500/40 bg-gradient-to-br from-amber-950/20 to-gray-900/40 flex flex-col justify-between space-y-4">
-                <div>
-                  <div class="flex items-center justify-between">
-                    <span class="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded font-bold font-mono">EPISODE READY FOR REVIEW</span>
-                    <span class="text-xs font-mono text-gray-400">${reviewEpisodes[0].completedScenesCount} / ${reviewEpisodes[0].scenesCount} Scenes Ready</span>
-                  </div>
-                  <h3 class="text-base font-bold text-white mt-2">${reviewEpisodes[0].title}</h3>
-                  <p class="text-xs text-gray-400 mt-1 line-clamp-2">${reviewEpisodes[0].topic}</p>
-                </div>
-                <div class="flex items-center gap-2.5 pt-2">
-                  <a href="/api/episodes/${reviewEpisodes[0].id}/preview" target="_blank" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-700 transition flex items-center gap-1.5">
-                    <span>▶</span> Preview Scenes
-                  </a>
-                  <button onclick="assembleCapCutDraft('${reviewEpisodes[0].id}')" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-700 transition flex items-center gap-1.5">
-                    <span>✂️</span> CapCut Draft
-                  </button>
-                  <button onclick="approveEpisode('${reviewEpisodes[0].id}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-xl shadow-md shadow-emerald-600/30 transition flex items-center gap-1.5">
-                    <span>✓</span> Approve & Publish
-                  </button>
-                </div>
-              </div>
-            ` : `
-              <div class="glass-card p-5 rounded-2xl border-gray-800 text-center py-8">
-                <div class="text-2xl mb-1">🎉</div>
-                <div class="text-xs font-bold text-gray-300">No Episodes Awaiting Review</div>
-                <div class="text-[11px] text-gray-500 mt-0.5">All episodes are either in production or scheduled.</div>
-              </div>
-            `}
-
-            <!-- YouTube Auth / Connection Alert Card -->
-            ${!channel.isConnected ? `
-              <div class="glass-card p-5 rounded-2xl border-red-500/40 bg-gradient-to-br from-red-950/20 to-gray-900/40 flex flex-col justify-between space-y-4">
-                <div>
-                  <div class="flex items-center justify-between">
-                    <span class="text-[10px] bg-red-950 text-red-300 border border-red-800 px-2 py-0.5 rounded font-bold font-mono">CONNECTION EXPIRED</span>
-                    <span class="text-xs font-mono text-red-400 font-bold">Action Needed</span>
-                  </div>
-                  <h3 class="text-base font-bold text-white mt-2">YouTube OAuth Channel Link Required</h3>
-                  <p class="text-xs text-gray-400 mt-1">Google OAuth refresh token expired or unlinked. Re-authorize to enable automated video upload and scheduling.</p>
-                </div>
-                <div>
-                  <a href="${channel.authUrl}" class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-md shadow-red-600/30">
-                    <span>🔗</span> Link Lams' YouTube Channel Now
-                  </a>
-                </div>
-              </div>
-            ` : `
-              <div class="glass-card p-5 rounded-2xl border-emerald-500/30 bg-gradient-to-br from-emerald-950/15 to-gray-900/40 flex flex-col justify-between space-y-3">
-                <div>
-                  <div class="flex items-center justify-between">
-                    <span class="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-bold font-mono">YOUTUBE API LIVE</span>
-                    <span class="text-xs font-mono text-emerald-400">Connected</span>
-                  </div>
-                  <h3 class="text-sm font-bold text-white mt-2">${channel.title}</h3>
-                  <p class="text-xs text-gray-400 mt-0.5">${channel.subscriberCount || '0'} subscribers • Channel ID: <span class="font-mono text-indigo-300">${channel.channelId || 'N/A'}</span></p>
-                </div>
-                <div class="text-[11px] text-gray-500 flex items-center justify-between pt-2 border-t border-gray-800">
-                  <span>Quota: ~10,000 units/day (~6 video uploads)</span>
-                  <a href="${channel.authUrl}" class="text-indigo-400 hover:underline">Re-link</a>
-                </div>
-              </div>
-            `}
-          </div>
-        </div>
-
-        <!-- Live Pipeline Ribbon (Supabase DB Data) -->
-        <div class="glass-card p-5 rounded-2xl space-y-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-semibold text-gray-400 tracking-wider">Live Pipeline Counters (Supabase DB)</span>
-            <span class="text-[11px] font-mono text-gray-500">${episodes.length} Episodes Total in Database</span>
-          </div>
-          <div class="flex items-center justify-between text-xs font-mono">
-            <div class="flex flex-col items-center">
-              <span class="text-gray-400">DRAFT</span>
-              <span class="text-xl font-bold text-white mt-1">${metrics.Draft || 0}</span>
-            </div>
-            <span class="text-gray-600">→</span>
-            <div class="flex flex-col items-center">
-              <span class="text-gray-400">PLANNING</span>
-              <span class="text-xl font-bold text-white mt-1">${metrics.Planning || 0}</span>
-            </div>
-            <span class="text-gray-600">→</span>
-            <div class="flex flex-col items-center">
-              <span class="text-gray-400">PRODUCTION</span>
-              <span class="text-xl font-bold text-white mt-1">${metrics.Production || 0}</span>
-            </div>
-            <span class="text-gray-600">→</span>
-            <div class="flex flex-col items-center bg-amber-500/10 border border-amber-500/30 px-5 py-2 rounded-xl shadow-sm">
-              <span class="text-amber-400 font-bold">REVIEW (READY)</span>
-              <span class="text-2xl font-black text-amber-300 mt-0.5">${metrics.Review || 0}</span>
-            </div>
-            <span class="text-gray-600">→</span>
-            <div class="flex flex-col items-center">
-              <span class="text-gray-400">SCHEDULED</span>
-              <span class="text-xl font-bold text-emerald-400 mt-1">${metrics.Scheduled || 0}</span>
-            </div>
-            <span class="text-gray-600">→</span>
-            <div class="flex flex-col items-center">
-              <span class="text-gray-400">PUBLISHED</span>
-              <span class="text-xl font-bold text-indigo-400 mt-1">${metrics.Published || 0}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Watched Export Folder Status -->
-        <div class="glass-card p-5 rounded-2xl space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <h3 class="text-xs uppercase font-semibold text-gray-400 tracking-wider">Watched CapCut Export Folder</h3>
-              <p class="text-xs text-gray-500">Folder: <code class="text-indigo-300 font-mono">watched_exports/</code></p>
-            </div>
-            <span class="text-xs font-mono text-gray-400">${exportedVideos.length} Master Videos Detected</span>
-          </div>
-
-          ${exportedVideos.length > 0 ? `
-            <div class="grid grid-cols-3 gap-3">
-              ${exportedVideos.map(v => `
-                <div class="p-3 bg-gray-950/70 border border-gray-800 rounded-xl text-xs space-y-1">
-                  <div class="font-bold text-white truncate">${v.fileName}</div>
-                  <div class="text-[11px] text-gray-400 font-mono">${v.sizeMb} MB • Modified ${new Date(v.modifiedAt).toLocaleTimeString()}</div>
-                  <div class="pt-1 flex items-center justify-between text-[11px]">
-                    <a href="/api/exports/${encodeURIComponent(v.fileName)}" target="_blank" class="text-indigo-400 hover:text-indigo-300">▶ Play</a>
-                    <span class="text-emerald-400 font-mono">Ready to Publish</span>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          ` : `
-            <div class="p-4 bg-gray-950/40 rounded-xl border border-dashed border-gray-800 text-center text-xs text-gray-500">
-              Drop exported videos from CapCut into <code class="text-indigo-300 font-mono">c:\\Users\\DELL\\lams-agent\\watched_exports</code> or drag-and-drop into Episode Preview to link them.
-            </div>
-          `}
-        </div>
-
-        <!-- Recent Agent Receipts -->
-        <div class="glass-card p-5 rounded-2xl space-y-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-xs uppercase font-semibold text-gray-400 tracking-wider">Agent Activity & Cryptographic Receipts</h3>
-            <span class="text-xs text-gray-500 font-mono">HMAC SHA-256 Verified</span>
-          </div>
-          <div class="space-y-2 text-xs">
-            <div class="p-3 bg-gray-950/60 border border-gray-800/80 rounded-xl flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                <div>
-                  <span class="font-bold text-white">CapCut Timeline Assembly</span>
-                  <span class="text-gray-500 font-mono text-[11px] ml-2">rcpt_7f3a8b...</span>
-                </div>
-              </div>
-              <div class="flex items-center gap-4 text-gray-400 font-mono text-[11px]">
-                <span>Duration: 142ms</span>
-                <span class="text-emerald-400 bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded">VERIFIED PASS</span>
-              </div>
-            </div>
-            <div class="p-3 bg-gray-950/60 border border-gray-800/80 rounded-xl flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                <div>
-                  <span class="font-bold text-white">Full YouTube Production Pipeline</span>
-                  <span class="text-gray-500 font-mono text-[11px] ml-2">rcpt_1e9c4d...</span>
-                </div>
-              </div>
-              <div class="flex items-center gap-4 text-gray-400 font-mono text-[11px]">
-                <span>Duration: 320ms</span>
-                <span class="text-emerald-400 bg-emerald-950 border border-emerald-800 px-2 py-0.5 rounded">VERIFIED PASS</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ========================================== -->
-      <!-- TAB 2: EPISODES PIPELINE                   -->
-      <!-- ========================================== -->
-      <section id="view-episodes" class="hidden space-y-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-sm font-bold text-white">Episodes Pipeline (${episodes.length})</h2>
-            <p class="text-xs text-gray-400">Visual cards of all episodes in your Supabase database</p>
-          </div>
-          <div class="flex items-center gap-2 text-xs">
-            <button onclick="filterEpisodes('all')" class="bg-gray-800 text-white px-3 py-1 rounded-lg">All</button>
-            <button onclick="filterEpisodes('Review')" class="bg-amber-950 text-amber-300 border border-amber-800 px-3 py-1 rounded-lg font-bold">Needs Review (${metrics.Review || 0})</button>
-            <button onclick="filterEpisodes('Draft')" class="bg-gray-900 text-gray-400 px-3 py-1 rounded-lg">Draft (${metrics.Draft || 0})</button>
-            <button onclick="filterEpisodes('Scheduled')" class="bg-gray-900 text-emerald-400 px-3 py-1 rounded-lg">Scheduled (${metrics.Scheduled || 0})</button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-5" id="episodesGrid">
-          ${episodes.map(ep => `
-            <div class="glass-card p-5 rounded-2xl border ${ep.status === 'Review' ? 'border-amber-500/50 bg-amber-950/10' : 'border-gray-800/80'} flex flex-col justify-between space-y-4 hover:border-indigo-500/40 transition">
-              <div>
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded font-mono font-bold">${ep.projectName}</span>
-                  <span class="text-[10px] font-mono px-2 py-0.5 rounded uppercase font-bold ${ep.status === 'Review' ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-gray-800 text-gray-400'}">${ep.status}</span>
-                </div>
-                <h3 class="text-sm font-bold text-white mt-2 leading-snug">${ep.title}</h3>
-                <p class="text-xs text-gray-400 mt-1 line-clamp-2">${ep.topic}</p>
-              </div>
-
-              <!-- Scene progress & actions -->
-              <div class="space-y-3 pt-2 border-t border-gray-800/60">
-                <div class="flex items-center justify-between text-[11px] font-mono text-gray-400">
-                  <span>Scenes: ${ep.completedScenesCount} / ${ep.scenesCount}</span>
-                  <span>${new Date(ep.createdAt).toLocaleDateString()}</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <a href="/api/episodes/${ep.id}/preview" target="_blank" class="flex-1 bg-gray-800 hover:bg-gray-700 text-center text-gray-200 text-xs font-semibold py-1.5 rounded-xl border border-gray-700 transition">
-                    ▶ Preview
-                  </a>
-                  <button onclick="assembleCapCutDraft('${ep.id}')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold py-1.5 rounded-xl border border-gray-700 transition">
-                    ✂️ CapCut
-                  </button>
-                  <button onclick="approveEpisode('${ep.id}')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-md transition">
-                    ✓ Release
-                  </button>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </section>
-
-      <!-- ========================================== -->
-      <!-- TAB 3: WORKFORCE SKILLS                    -->
-      <!-- ========================================== -->
-      <section id="view-skills" class="hidden space-y-6">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-sm font-bold text-white">Workforce Skills Library</h2>
-            <p class="text-xs text-gray-400">Autonomous, deterministic, and compiled demonstration skills</p>
-          </div>
-          <button onclick="openTeachModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition">
-            + Teach New Skill
-          </button>
-        </div>
-
-        <div class="grid grid-cols-3 gap-5">
-          ${skills.map(s => `
-            <div class="glass-card p-5 rounded-2xl border border-gray-800/80 flex flex-col justify-between space-y-4">
-              <div>
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-bold text-white">${s.name}</span>
-                  <span class="text-[9px] bg-gray-800 text-gray-300 font-mono px-1.5 py-0.5 rounded">v${s.version}</span>
-                </div>
-                <p class="text-xs text-gray-400 mt-2 line-clamp-3">${s.description}</p>
-              </div>
-
-              <div class="space-y-2 pt-2 border-t border-gray-800/80 text-xs">
-                <div class="flex items-center justify-between text-[11px] text-gray-500 font-mono">
-                  <span>Execution: <strong class="text-gray-300">${s.executionMode.replace('_', ' ')}</strong></span>
-                  <span>Gate: <strong class="${s.approvalGate.required ? 'text-amber-400' : 'text-emerald-400'}">${s.approvalGate.level}</strong></span>
-                </div>
-                <div class="flex items-center justify-between pt-1">
-                  <span class="text-[11px] text-gray-500 font-mono">${s.actions.length} Steps Defined</span>
-                  <button onclick="runSkill('${s.id}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1 rounded-lg transition">
-                    ▶ Run
-                  </button>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </section>
-
-      <!-- ========================================== -->
-      <!-- TAB 4: CONNECTIONS & HEALTH                -->
-      <!-- ========================================== -->
-      <section id="view-connections" class="hidden space-y-6">
-        <div>
-          <h2 class="text-sm font-bold text-white">System Integrations & API Health</h2>
-          <p class="text-xs text-gray-400">Status of connected services, credentials, and local subsystems</p>
-        </div>
-
-        <div class="grid grid-cols-2 gap-5">
-          <!-- YouTube Card -->
-          <div class="glass-card p-6 rounded-2xl border ${channel.isConnected ? 'border-emerald-500/40' : 'border-red-500/40'} space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-xl bg-red-600 flex items-center justify-center font-bold text-white">YT</div>
-                <div>
-                  <h3 class="text-sm font-bold text-white">YouTube Data API v3</h3>
-                  <p class="text-xs text-gray-400">OAuth 2.0 Video Publishing & Scheduling</p>
-                </div>
-              </div>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded font-bold ${channel.isConnected ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-red-950 text-red-300 border border-red-800'}">
-                ${channel.isConnected ? 'LINKED & ACTIVE' : 'UNLINKED / EXPIRED'}
-              </span>
-            </div>
-
-            <p class="text-xs text-gray-400 leading-relaxed">
-              ${channel.isConnected ? `
-                Connected Channel: <strong>${channel.title}</strong> (${channel.subscriberCount || '0'} subs).<br/>
-                Videos uploaded via this integration are posted privately and scheduled for your designated publication time.
-              ` : `
-                No active YouTube refresh token found. Click below to sign in with Lams' Google account and authorize uploads.
-              `}
-            </p>
-
-            <div>
-              <a href="${channel.authUrl}" class="inline-flex items-center gap-2 ${channel.isConnected ? 'bg-gray-800 hover:bg-gray-700 text-gray-200' : 'bg-red-600 hover:bg-red-500 text-white'} text-xs font-semibold px-4 py-2 rounded-xl transition">
-                <span>🔗</span> <span>${channel.isConnected ? 'Re-authorize YouTube Channel' : 'Authorize Lams YouTube Account'}</span>
-              </a>
-            </div>
-          </div>
-
-          <!-- Supabase DB Card -->
-          <div class="glass-card p-6 rounded-2xl border border-emerald-500/40 space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center font-bold text-white">DB</div>
-                <div>
-                  <h3 class="text-sm font-bold text-white">Supabase Live Database</h3>
-                  <p class="text-xs text-gray-400">Projects, Episodes, and Scenes Storage</p>
-                </div>
-              </div>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
-                CONNECTED
-              </span>
-            </div>
-            <p class="text-xs text-gray-400 leading-relaxed">
-              Direct connection established to Supabase project <code class="text-indigo-300 font-mono">sobgbrdggmgwajrqjosq</code>.<br/>
-              Querying live rows for 48 episodes, 159 scenes, and public studio assets bucket.
-            </p>
-          </div>
-
-          <!-- FFmpeg Card -->
-          <div class="glass-card p-6 rounded-2xl border border-gray-800/80 space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-xl bg-violet-600 flex items-center justify-center font-bold text-white">FF</div>
-                <div>
-                  <h3 class="text-sm font-bold text-white">Headless FFmpeg Engine</h3>
-                  <p class="text-xs text-gray-400">Deterministic Filtergraph Stitching</p>
-                </div>
-              </div>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
-                INSTALLED
-              </span>
-            </div>
-            <p class="text-xs text-gray-400 leading-relaxed">
-              FFmpeg 8.1.1 is active on Windows PATH. Used for automated scene concatenation, volume ducking, and rendering fallback videos when CapCut is bypassed.
-            </p>
-          </div>
-
-          <!-- CapCut Desktop Integration Card -->
-          <div class="glass-card p-6 rounded-2xl border border-gray-800/80 space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-xl bg-cyan-600 flex items-center justify-center font-bold text-white">CC</div>
-                <div>
-                  <h3 class="text-sm font-bold text-white">CapCut Desktop Integration</h3>
-                  <p class="text-xs text-gray-400">Local Draft JSON Injection</p>
-                </div>
-              </div>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
-                ACTIVE
-              </span>
-            </div>
-            <p class="text-xs text-gray-400 leading-relaxed">
-              Injects pre-cached assets directly into <code class="text-indigo-300 font-mono">draft_content.json</code> with microsecond offsets, ready to open in CapCut Desktop.
-            </p>
-          </div>
-        </div>
-      </section>
-
-    </main>
+    </div>
   </div>
 
-  <!-- ========================================== -->
-  <!-- TEACH NEW SKILL MODAL                      -->
-  <!-- ========================================== -->
-  <div id="teachModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-    <div class="glass-card max-w-lg w-full p-6 rounded-2xl border border-indigo-500/40 space-y-5 shadow-2xl">
-      <div class="flex items-center justify-between">
+  <!-- ============================================================ -->
+  <!-- 5. TEACH SKILL MODAL (Compiled Demonstrations)              -->
+  <!-- ============================================================ -->
+  <div id="teachModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div class="bg-white max-w-lg w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-gray-100">
         <div>
-          <h3 class="text-sm font-bold text-white">Teach New Workforce Skill</h3>
-          <p class="text-xs text-gray-400">Demonstrate a task once; LAMS HQ compiles it into a reusable skill</p>
+          <h3 class="text-base font-bold text-gray-900">Teach Me a New Task</h3>
+          <p class="text-xs text-gray-500">Show me once in your browser or desktop app; I'll save it as a reusable skill.</p>
         </div>
-        <button onclick="closeTeachModal()" class="text-gray-400 hover:text-white text-lg">✕</button>
+        <button onclick="closeTeachModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
       </div>
 
       <div class="space-y-4 text-xs">
         <div>
-          <label class="block text-gray-300 font-medium mb-1">Workflow / Skill Name</label>
-          <input id="teachSkillName" type="text" placeholder="e.g. Post TikTok Teaser Clip" class="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500" />
+          <label class="block text-gray-700 font-medium mb-1">Skill Name</label>
+          <input id="teachSkillName" type="text" placeholder="e.g. Schedule TikTok Clip" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-gray-900 focus:outline-none focus:border-indigo-500" />
         </div>
 
         <div>
-          <label class="block text-gray-300 font-medium mb-1">Target Application</label>
-          <select id="teachTargetApp" class="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
-            <option value="CapCut Desktop">CapCut Desktop</option>
+          <label class="block text-gray-700 font-medium mb-1">Target Application</label>
+          <select id="teachTargetApp" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-gray-900 focus:outline-none focus:border-indigo-500">
             <option value="YouTube Studio">YouTube Studio</option>
-            <option value="TikTok Web / App">TikTok Web / App</option>
-            <option value="Custom Browser App">Custom Browser / Web Tool</option>
+            <option value="CapCut Desktop">CapCut Desktop</option>
+            <option value="TikTok Web">TikTok Web</option>
+            <option value="Custom Browser">Custom Browser App</option>
           </select>
         </div>
 
-        <div>
-          <label class="block text-gray-300 font-medium mb-1">Demonstrated Steps Sequence</label>
-          <div class="p-3 bg-gray-950/80 rounded-xl border border-gray-800 space-y-2 font-mono text-[11px] text-gray-300">
-            <div class="flex items-center gap-2 text-emerald-400"><span>1.</span> <span>Open application & navigate to Content page</span></div>
-            <div class="flex items-center gap-2 text-emerald-400"><span>2.</span> <span>Select exported video file from watched folder</span></div>
-            <div class="flex items-center gap-2 text-emerald-400"><span>3.</span> <span>Populate title, description & audience tags</span></div>
-            <div class="flex items-center gap-2 text-amber-400"><span>4.</span> <span>Human Approval Checkpoint before publishing</span></div>
-          </div>
+        <div class="bg-[#f5f3ff] border border-indigo-100 rounded-2xl p-4 space-y-2">
+          <span class="text-xs font-bold text-[#4338ca]">How this works:</span>
+          <p class="text-xs text-indigo-950 leading-relaxed">
+            LAMS HQ observes your sequence of clicks, navigation, and inputs. Once compiled, you can run this skill anytime with one click or via chat.
+          </p>
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-3 pt-2">
-        <button onclick="closeTeachModal()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs px-4 py-2 rounded-xl transition">
+      <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+        <button onclick="closeTeachModal()" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
-        <button onclick="compileDemonstrationSkill()" id="btnCompileSkill" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md shadow-indigo-600/30 transition">
+        <button id="btnCompileSkill" onclick="compileDemonstrationSkill()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
           Compile into Reusable Skill
         </button>
       </div>
     </div>
   </div>
 
-  <!-- SCRIPT LOGIC -->
+  <!-- ============================================================ -->
+  <!-- 6. FRONTEND JAVASCRIPT LOGIC                                 -->
+  <!-- ============================================================ -->
   <script>
+    let activeReleaseEpId = '${currentEpisode.id}';
+
+    // Set default tomorrow date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('releaseDate').value = tomorrow.toISOString().split('T')[0];
+
     // Tab Switching
     function switchTab(tabId) {
-      ['today', 'episodes', 'skills', 'connections'].forEach(t => {
+      ['home', 'episodes', 'skills', 'activity', 'connections'].forEach(t => {
         const view = document.getElementById('view-' + t);
-        const tab = document.getElementById('tab-' + t);
+        const nav = document.getElementById('nav-' + t);
         if (t === tabId) {
           view.classList.remove('hidden');
-          tab.classList.add('bg-indigo-600', 'text-white', 'shadow-sm');
-          tab.classList.remove('text-gray-400');
+          nav.classList.add('bg-[#ede9fe]', 'text-[#4338ca]', 'font-semibold');
+          nav.classList.remove('text-gray-600');
         } else {
           view.classList.add('hidden');
-          tab.classList.remove('bg-indigo-600', 'text-white', 'shadow-sm');
-          tab.classList.add('text-gray-400');
+          nav.classList.remove('bg-[#ede9fe]', 'text-[#4338ca]', 'font-semibold');
+          nav.classList.add('text-gray-600');
         }
       });
+    }
+
+    // Filter Episodes in Episodes Tab
+    function filterEpisodes(status) {
+      const cards = document.querySelectorAll('#allEpisodesGrid > div');
+      cards.forEach(c => {
+        if (status === 'all') {
+          c.style.display = '';
+        } else {
+          const badge = c.querySelector('span.uppercase');
+          if (badge && badge.innerText.includes(status.toUpperCase())) {
+            c.style.display = '';
+          } else {
+            c.style.display = 'none';
+          }
+        }
+      });
+    }
+
+    function selectEpisode(id) {
+      window.location.search = '?episodeId=' + id;
     }
 
     // Chat Logic
@@ -661,7 +823,6 @@ export function renderDashboardHtml(
 
       appendChatMessage('user', text);
 
-      // Call API
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -670,8 +831,12 @@ export function renderDashboardHtml(
         });
         const data = await res.json();
         appendChatMessage('agent', data.reply);
+
+        if (data.planCard) {
+          renderChatPlanCard(data.planCard);
+        }
       } catch (err) {
-        appendChatMessage('agent', 'Error processing request: ' + err.message);
+        appendChatMessage('agent', 'Error: ' + err.message);
       }
     }
 
@@ -683,37 +848,58 @@ export function renderDashboardHtml(
     function appendChatMessage(sender, text) {
       const container = document.getElementById('chatMessages');
       const msgDiv = document.createElement('div');
-      msgDiv.className = 'flex items-start gap-2.5 ' + (sender === 'user' ? 'justify-end' : '');
+      msgDiv.className = 'flex items-start ' + (sender === 'user' ? 'justify-end' : '');
 
       if (sender === 'agent') {
         msgDiv.innerHTML = \`
-          <div class="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0 mt-0.5">AI</div>
-          <div class="chat-bubble-agent p-3 rounded-2xl rounded-tl-sm text-gray-300 max-w-[85%] leading-relaxed">\${text}</div>
+          <div class="bg-gray-100 text-gray-800 rounded-2xl rounded-tl-sm p-3.5 leading-relaxed max-w-[88%]">\${text}</div>
         \`;
       } else {
         msgDiv.innerHTML = \`
-          <div class="chat-bubble-user p-3 rounded-2xl rounded-tr-sm text-white max-w-[85%] leading-relaxed">\${text}</div>
+          <div class="bg-[#4338ca] text-white rounded-2xl rounded-tr-sm p-3.5 leading-relaxed max-w-[88%] shadow-sm">\${text}</div>
         \`;
       }
       container.appendChild(msgDiv);
       container.scrollTop = container.scrollHeight;
     }
 
+    function renderChatPlanCard(plan) {
+      const container = document.getElementById('chatMessages');
+      const card = document.createElement('div');
+      card.className = 'border border-gray-200/90 rounded-2xl p-4 bg-white shadow-sm space-y-3';
+      card.innerHTML = \`
+        <h4 class="font-bold text-gray-900 text-xs">Here's what I'll do</h4>
+        <ol class="space-y-1.5 text-gray-600 list-decimal list-inside text-xs">
+          <li>Check your finished video: <strong>\${plan.masterVideo || 'Master Export'}</strong></li>
+          <li>Upload privately to YouTube</li>
+          <li>Schedule for tomorrow 7:00 PM</li>
+        </ol>
+        <p class="text-[11px] text-gray-400 pt-1">Nothing goes public until you confirm.</p>
+        <div class="flex items-center gap-2 pt-1">
+          <button onclick="openReleaseRoom('\${plan.episodeId}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+            Confirm
+          </button>
+        </div>
+      \`;
+      container.appendChild(card);
+      container.scrollTop = container.scrollHeight;
+    }
+
     function clearChat() {
       const container = document.getElementById('chatMessages');
       container.innerHTML = '';
-      appendChatMessage('agent', 'Chat cleared. How can I assist your YouTube production today?');
+      appendChatMessage('agent', 'Chat cleared. How can I assist your video workflow today?');
     }
 
-    // Actions
+    // CapCut Draft Generation
     async function assembleCapCutDraft(id) {
       appendChatMessage('user', 'Assemble CapCut Draft for episode ' + id);
-      appendChatMessage('agent', 'Assembling CapCut draft and resolving media assets...');
+      appendChatMessage('agent', 'Creating CapCut timeline draft and resolving scene assets...');
       try {
         const res = await fetch('/api/episodes/' + id + '/capcut', { method: 'POST' });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        appendChatMessage('agent', '✓ CapCut draft created at:<br/><code class="text-indigo-300 text-[10px] break-all">' + data.draftPath + '</code><br/>Tracks: ' + data.tracksCount + ' • Ready to open in CapCut Desktop.');
+        appendChatMessage('agent', '✓ CapCut draft created with ' + data.tracksCount + ' tracks. Ready to open in CapCut Desktop.');
         alert('✓ CapCut Draft Created!\\nPath: ' + data.draftPath);
       } catch (err) {
         appendChatMessage('agent', '❌ Failed to create draft: ' + err.message);
@@ -721,39 +907,103 @@ export function renderDashboardHtml(
       }
     }
 
-    async function approveEpisode(id) {
-      const confirmed = confirm('Confirm approving episode and updating Supabase database to Scheduled?\\n\\n- Updates status in Supabase\\n- Requires Master Video file and active YouTube link');
-      if (!confirmed) return;
+    // Release Room Logic
+    async function openReleaseRoom(epId) {
+      activeReleaseEpId = epId;
+      const modal = document.getElementById('releaseRoomModal');
+      const list = document.getElementById('preflightList');
+      const btn = document.getElementById('btnConfirmRelease');
+      const msg = document.getElementById('releaseStatusMessage');
 
-      appendChatMessage('user', 'Approve and publish episode ' + id);
+      modal.classList.remove('hidden');
+      msg.classList.add('hidden');
+      list.innerHTML = '<div class="text-center py-3 text-gray-400">Loading preflight verification...</div>';
+      btn.disabled = true;
+
       try {
-        const res = await fetch('/api/episodes/' + id + '/approve', { method: 'POST' });
+        const res = await fetch('/api/episodes/' + epId + '/release-check');
+        const check = await res.json();
+
+        document.getElementById('releaseEpisodeTitle').innerText = 'Release Room: ' + check.title;
+
+        let html = '';
+        // Scenes
+        html += '<div class="flex items-center justify-between">';
+        html += '<span class="flex items-center gap-2">' + (check.allScenesReady ? '✅' : '⚠️') + ' <span>All Scenes Rendered</span></span>';
+        html += '<span class="font-mono text-gray-500">' + check.completedScenesCount + ' / ' + check.scenesCount + '</span>';
+        html += '</div>';
+
+        // Master Video
+        html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
+        html += '<span class="flex items-center gap-2">' + (check.masterVideo ? '✅' : '❌') + ' <span>Master Video Export</span></span>';
+        html += '<span class="font-mono text-gray-500">' + (check.masterVideo ? check.masterVideo.fileName + ' (' + check.masterVideo.sizeMb + 'MB)' : 'Missing in watched_exports/') + '</span>';
+        html += '</div>';
+
+        // YouTube OAuth
+        html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
+        html += '<span class="flex items-center gap-2">' + (check.youtube.connected ? '✅' : '❌') + ' <span>YouTube Account Connected</span></span>';
+        html += '<span class="font-mono text-gray-500">' + (check.youtube.connected ? check.youtube.channelTitle : '<a href="' + check.youtube.authUrl + '" class="text-indigo-600 font-bold underline">Link Account</a>') + '</span>';
+        html += '</div>';
+
+        // Privacy
+        html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
+        html += '<span class="flex items-center gap-2">🔒 <span>Privacy Mode</span></span>';
+        html += '<span class="font-bold text-indigo-700">Private Release (Safe)</span>';
+        html += '</div>';
+
+        list.innerHTML = html;
+
+        if (check.canRelease) {
+          btn.disabled = false;
+          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+          btn.disabled = true;
+          btn.classList.add('opacity-50', 'cursor-not-allowed');
+          msg.className = 'bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded-xl text-xs';
+          msg.innerHTML = '<strong>Prerequisites not met:</strong> ' + check.reasons.join(', ');
+          msg.classList.remove('hidden');
+        }
+      } catch (err) {
+        list.innerHTML = '<div class="text-red-500">Error loading preflight checklist: ' + err.message + '</div>';
+      }
+    }
+
+    function closeReleaseRoom() {
+      document.getElementById('releaseRoomModal').classList.add('hidden');
+    }
+
+    async function confirmAndPublish() {
+      const btn = document.getElementById('btnConfirmRelease');
+      const msg = document.getElementById('releaseStatusMessage');
+      btn.disabled = true;
+      btn.innerText = 'Publishing Privately...';
+
+      try {
+        const res = await fetch('/api/episodes/' + activeReleaseEpId + '/approve', { method: 'POST' });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        appendChatMessage('agent', '✓ Episode approved and status updated to <strong>' + data.newStatus + '</strong> in Supabase! Receipt: ' + data.receiptId);
-        alert('✓ Approved & Scheduled!\\nReceipt ID: ' + data.receiptId);
-        window.location.reload();
+        msg.className = 'bg-emerald-50 text-emerald-900 border border-emerald-200 p-3 rounded-xl text-xs space-y-1';
+        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with Video ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to Scheduled in Supabase.';
+        msg.classList.remove('hidden');
+
+        btn.innerText = 'Release Published';
+        appendChatMessage('agent', '✓ Episode published privately to YouTube! Video ID: ' + data.videoId);
+
+        setTimeout(() => {
+          closeReleaseRoom();
+          window.location.reload();
+        }, 3000);
       } catch (err) {
-        appendChatMessage('agent', '⚠️ Publish Notice: ' + err.message);
-        alert('Publish Notice: ' + err.message);
+        msg.className = 'bg-red-50 text-red-900 border border-red-200 p-3 rounded-xl text-xs';
+        msg.innerHTML = '<strong>Publishing Error:</strong> ' + err.message;
+        msg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.innerText = 'Publish as Private Release';
       }
     }
 
-    async function runSkill(id) {
-      if (!confirm('Execute skill "' + id + '" now?')) return;
-      appendChatMessage('user', 'Run skill: ' + id);
-      try {
-        const res = await fetch('/api/skills/' + id + '/run', { method: 'POST' });
-        const data = await res.json();
-        appendChatMessage('agent', 'Skill completed. Outcome: ' + JSON.stringify(data.outputData || data));
-        alert('Skill executed successfully!');
-      } catch (err) {
-        appendChatMessage('agent', 'Error executing skill: ' + err.message);
-      }
-    }
-
-    // Teach Modal
+    // Skills & Teach Modal
     function openTeachModal() {
       document.getElementById('teachModal').classList.remove('hidden');
     }
@@ -769,7 +1019,7 @@ export function renderDashboardHtml(
         return;
       }
       const btn = document.getElementById('btnCompileSkill');
-      btn.innerText = 'Compiling Skill Contract...';
+      btn.innerText = 'Compiling...';
       btn.disabled = true;
 
       try {
@@ -780,13 +1030,24 @@ export function renderDashboardHtml(
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        alert('✓ Skill Successfully Compiled and Registered!\\n\\nName: ' + data.skill.name + '\\nGate Level: ' + data.skill.approvalGate.level + '\\nSteps: ' + data.skill.actions.length);
+        alert('✓ Skill Saved: ' + data.skill.name);
         closeTeachModal();
         window.location.reload();
       } catch (err) {
-        alert('Compilation Error: ' + err.message);
+        alert('Error: ' + err.message);
         btn.innerText = 'Compile into Reusable Skill';
         btn.disabled = false;
+      }
+    }
+
+    async function runSkill(id) {
+      if (!confirm('Run skill: ' + id + '?')) return;
+      try {
+        const res = await fetch('/api/skills/' + id + '/run', { method: 'POST' });
+        const data = await res.json();
+        alert('Skill executed successfully!');
+      } catch (err) {
+        alert('Error: ' + err.message);
       }
     }
   </script>

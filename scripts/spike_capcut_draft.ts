@@ -110,7 +110,7 @@ const sampleMediaPlan: MediaPlan = {
 // 2. Execute CapCutAdapter
 const adapter = new CapCutAdapter();
 const outputDir = path.resolve('test_output/capcut_draft_spike');
-const result = adapter.createDraftFromMediaPlan(sampleMediaPlan, outputDir);
+const result = await adapter.createDraftFromMediaPlan(sampleMediaPlan, outputDir);
 
 console.log('✓ Successfully compiled MediaPlan to CapCut Draft!');
 console.log('  Draft ID:               ', result.draftId);

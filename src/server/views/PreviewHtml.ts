@@ -42,7 +42,7 @@ export function renderPreviewHtml(
   <header class="border-b border-gray-800/80 bg-gray-950/80 px-6 py-3.5 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md">
     <div class="flex items-center space-x-4">
       <a href="/" class="text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
-        <span>←</span> <span>Back to Live Cockpit</span>
+        <span>←</span> <span>Back to LAMS HQ</span>
       </a>
       <div class="h-4 w-px bg-gray-800"></div>
       <div>
@@ -60,10 +60,10 @@ export function renderPreviewHtml(
         <span>✂️</span> CapCut Draft
       </button>
       <button onclick="triggerFfmpegRender('${episode.id}')" id="btnRenderTop" class="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-700 flex items-center gap-1.5 transition">
-        <span>⚡</span> Render Master (FFmpeg)
+        <span>⚡</span> Render Video
       </button>
       <button onclick="triggerApprovePublish('${episode.id}')" id="btnApproveTop" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg shadow-md shadow-emerald-600/30 flex items-center gap-1.5 transition">
-        <span>✓</span> Approve & Schedule
+        <span>✓</span> Release Episode
       </button>
     </div>
   </header>
