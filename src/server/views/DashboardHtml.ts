@@ -9,7 +9,8 @@ export function renderDashboardHtml(
   channel: ChannelProfile,
   skills: SkillContract[],
   exportedVideos: ExportedVideoFile[],
-  selectedEpisodeId?: string
+  selectedEpisodeId?: string,
+  initialTab: string = 'home'
 ): string {
   const currentEpisode = episodes.find(e => e.id === selectedEpisodeId) || episodes.find(e => e.status === 'Review') || episodes[0] || {
     id: 'ep-none',
@@ -74,8 +75,13 @@ export function renderDashboardHtml(
   <style>
     body { background-color: #f8fafc; color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .hero-gradient { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #f59e0b 100%); }
-    .card-hover { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01); }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in { animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .card-hover { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+    .card-hover:hover { transform: translateY(-3px); box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.06), 0 4px 8px -4px rgba(0, 0, 0, 0.02); }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: rgba(0,0,0,0.03); }
     ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
@@ -90,25 +96,25 @@ export function renderDashboardHtml(
   <aside class="w-64 flex-shrink-0 bg-white border-r border-gray-200/80 flex flex-col justify-between h-full z-20">
     <div>
       <!-- Brand Header -->
-      <div class="px-6 py-6 flex items-center gap-3">
+      <a href="/" class="px-6 py-6 flex items-center gap-3 block hover:opacity-90 transition">
         <div class="w-8 h-8 rounded-full bg-[#4338ca] flex items-center justify-center font-black text-white text-base shadow-sm">
           L
         </div>
         <span class="text-base font-extrabold text-gray-900 tracking-tight">LAMS HQ</span>
-      </div>
+      </a>
 
       <!-- Navigation Menu -->
       <nav class="px-3 space-y-1">
-        <button onclick="switchTab('home')" id="nav-home" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-semibold text-sm transition bg-[#ede9fe] text-[#4338ca]">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button onclick="switchTab('home')" id="nav-home" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'home' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+          <svg class="w-5 h-5 ${initialTab === 'home' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
           </svg>
           <span>Home</span>
         </button>
 
-        <button onclick="switchTab('episodes')" id="nav-episodes" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+        <button onclick="switchTab('episodes')" id="nav-episodes" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'episodes' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 ${initialTab === 'episodes' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
             </svg>
             <span>Episodes</span>
@@ -116,9 +122,9 @@ export function renderDashboardHtml(
           <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">${episodes.length}</span>
         </button>
 
-        <button onclick="switchTab('skills')" id="nav-skills" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+        <button onclick="switchTab('skills')" id="nav-skills" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'skills' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 ${initialTab === 'skills' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
             <span>Skills</span>
@@ -126,16 +132,16 @@ export function renderDashboardHtml(
           <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">${skills.length}</span>
         </button>
 
-        <button onclick="switchTab('activity')" id="nav-activity" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
-          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button onclick="switchTab('activity')" id="nav-activity" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'activity' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+          <svg class="w-5 h-5 ${initialTab === 'activity' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
           </svg>
           <span>Activity</span>
         </button>
 
-        <button onclick="switchTab('connections')" id="nav-connections" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-medium text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition">
+        <button onclick="switchTab('connections')" id="nav-connections" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'connections' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 ${initialTab === 'connections' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
             </svg>
             <span>Connections</span>
@@ -176,7 +182,7 @@ export function renderDashboardHtml(
   <main class="flex-1 flex flex-col h-full overflow-y-auto bg-[#f8fafc] px-12 py-10 space-y-10">
 
     <!-- TAB 1: HOME VIEW (Default) -->
-    <div id="view-home" class="space-y-10">
+    <div id="view-home" class="space-y-10 ${initialTab === 'home' ? 'fade-in' : 'hidden'}">
       
       <!-- Greeting Header -->
       <div>
@@ -217,7 +223,7 @@ export function renderDashboardHtml(
 
             <!-- Action Buttons -->
             <div class="flex items-center gap-3 mt-6 pt-2">
-              <a href="/api/episodes/${currentEpisode.id}/preview" target="_blank" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
+              <a href="/episodes/${currentEpisode.id}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
                 <span>Watch the scenes</span>
               </a>
               <button onclick="assembleCapCutDraft('${currentEpisode.id}')" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
@@ -242,7 +248,7 @@ export function renderDashboardHtml(
 
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           ${recentEpisodes.map((ep, idx) => `
-            <div onclick="selectEpisode('${ep.id}')" class="bg-white border border-gray-200/80 rounded-2xl p-3.5 shadow-sm card-hover cursor-pointer flex flex-col justify-between">
+            <a href="/episodes/${ep.id}" class="bg-white border border-gray-200/80 rounded-2xl p-3.5 shadow-sm card-hover cursor-pointer flex flex-col justify-between block">
               <div>
                 <!-- Gradient Thumbnail -->
                 <div class="h-28 rounded-xl bg-gradient-to-r ${gradients[idx % gradients.length]} mb-3 shadow-inner relative">
@@ -262,7 +268,7 @@ export function renderDashboardHtml(
                   ${ep.status === 'Review' ? 'In review' : ep.status}
                 </span>
               </div>
-            </div>
+            </a>
           `).join('')}
         </div>
       </section>
@@ -370,23 +376,46 @@ export function renderDashboardHtml(
     </div>
 
     <!-- TAB 2: EPISODES FULL VIEW -->
-    <div id="view-episodes" class="hidden space-y-6">
-      <div class="flex items-center justify-between">
+    <div id="view-episodes" class="space-y-6 ${initialTab === 'episodes' ? 'fade-in' : 'hidden'}">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Your Episodes</h2>
-          <p class="text-xs text-gray-500 mt-0.5">All episodes from your Supabase production library</p>
+          <p class="text-xs text-gray-500 mt-0.5">Explore, preview, and release episodes from your Supabase production library</p>
         </div>
-        <div class="flex items-center gap-2 text-xs">
-          <button onclick="filterEpisodes('all')" class="bg-[#4338ca] text-white px-3 py-1.5 rounded-lg font-medium">All (${episodes.length})</button>
-          <button onclick="filterEpisodes('Review')" class="bg-amber-100 text-amber-900 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-medium">Needs Review (${metrics.Review || 0})</button>
-          <button onclick="filterEpisodes('Draft')" class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-medium">Draft (${metrics.Draft || 0})</button>
-          <button onclick="filterEpisodes('Scheduled')" class="bg-emerald-100 text-emerald-900 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium">Scheduled (${metrics.Scheduled || 0})</button>
+
+        <!-- Controls: Live Search & Filter Pills -->
+        <div class="flex items-center gap-3">
+          <div class="relative w-64">
+            <input 
+              type="text" 
+              id="episodeSearchInput" 
+              placeholder="Search episodes..." 
+              oninput="filterEpisodesBySearch(this.value)" 
+              class="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-500 shadow-sm"
+            />
+            <svg class="w-4 h-4 text-gray-400 absolute left-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+
+          <div class="flex items-center gap-1.5 text-xs">
+            <button onclick="filterEpisodes('all')" id="filter-btn-all" class="bg-[#4338ca] text-white px-3 py-1.5 rounded-lg font-medium transition shadow-sm">All (${episodes.length})</button>
+            <button onclick="filterEpisodes('Review')" id="filter-btn-review" class="bg-amber-100 text-amber-900 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-medium transition">Needs Review (${metrics.Review || 0})</button>
+            <button onclick="filterEpisodes('Draft')" id="filter-btn-draft" class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-medium transition">Draft (${metrics.Draft || 0})</button>
+            <button onclick="filterEpisodes('Scheduled')" id="filter-btn-scheduled" class="bg-emerald-100 text-emerald-900 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition">Scheduled (${metrics.Scheduled || 0})</button>
+          </div>
         </div>
       </div>
 
+      <!-- Episode Grid -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="allEpisodesGrid">
         ${episodes.map(ep => `
-          <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4">
+          <div 
+            data-title="${encodeURIComponent(ep.title.toLowerCase())}"
+            data-project="${encodeURIComponent(ep.projectName.toLowerCase())}"
+            data-status="${ep.status}"
+            class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4"
+          >
             <div>
               <div class="flex items-center justify-between">
                 <span class="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">${ep.projectName}</span>
@@ -396,7 +425,9 @@ export function renderDashboardHtml(
                   'bg-gray-100 text-gray-600'
                 }">${ep.status}</span>
               </div>
-              <h3 class="text-base font-bold text-gray-900 mt-2 leading-snug">${ep.title}</h3>
+              <a href="/episodes/${ep.id}" class="block group">
+                <h3 class="text-base font-bold text-gray-900 mt-2 leading-snug group-hover:text-[#4338ca] transition">${ep.title}</h3>
+              </a>
               <p class="text-xs text-gray-500 mt-1 line-clamp-2">${ep.topic}</p>
             </div>
 
@@ -406,13 +437,13 @@ export function renderDashboardHtml(
                 <span>${new Date(ep.createdAt).toLocaleDateString()}</span>
               </div>
               <div class="flex items-center gap-2">
-                <a href="/api/episodes/${ep.id}/preview" target="_blank" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
+                <a href="/episodes/${ep.id}" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
                   Watch
                 </a>
                 <button onclick="assembleCapCutDraft('${ep.id}')" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
                   CapCut
                 </button>
-                <button onclick="openReleaseRoom('${ep.id}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-3 py-2 rounded-xl transition">
+                <button onclick="openReleaseRoom('${ep.id}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm">
                   Release
                 </button>
               </div>
@@ -423,11 +454,11 @@ export function renderDashboardHtml(
     </div>
 
     <!-- TAB 3: SKILLS FULL VIEW -->
-    <div id="view-skills" class="hidden space-y-6">
+    <div id="view-skills" class="space-y-6 ${initialTab === 'skills' ? 'fade-in' : 'hidden'}">
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Workforce Skills</h2>
-          <p class="text-xs text-gray-500 mt-0.5">Automated workflows ready to run on your command</p>
+          <p class="text-xs text-gray-500 mt-0.5">Automated creator skills ready to execute on your command</p>
         </div>
         <button onclick="openTeachModal()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
           + Teach New Skill
@@ -446,8 +477,8 @@ export function renderDashboardHtml(
             </div>
 
             <div class="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-              <span class="text-gray-400 font-medium">${s.actions.length} steps</span>
-              <button onclick="runSkill('${s.id}')" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition">
+              <span class="text-gray-400 font-medium">${s.actions.length} action steps</span>
+              <button onclick="runSkill('${s.id}')" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition shadow-sm">
                 Run now
               </button>
             </div>
@@ -457,80 +488,96 @@ export function renderDashboardHtml(
     </div>
 
     <!-- TAB 4: ACTIVITY VIEW -->
-    <div id="view-activity" class="hidden space-y-6">
+    <div id="view-activity" class="space-y-6 ${initialTab === 'activity' ? 'fade-in' : 'hidden'}">
       <div>
         <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Recent Activity</h2>
-        <p class="text-xs text-gray-500 mt-0.5">Verified execution history and publishing receipts</p>
+        <p class="text-xs text-gray-500 mt-0.5">Execution history, timeline milestones, and release receipts</p>
       </div>
 
       <div class="bg-white border border-gray-200/80 rounded-2xl divide-y divide-gray-100 shadow-sm text-xs">
-        <div class="p-4 flex items-center justify-between">
+        <div class="p-4 flex items-center justify-between card-hover">
           <div class="flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
             <div>
               <span class="font-bold text-gray-900">CapCut Timeline Assembly</span>
-              <span class="text-gray-400 text-[11px] ml-2">rcpt_7f3a8b29</span>
+              <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_7f3a8b29</span>
+              <p class="text-[11px] text-gray-500 mt-0.5">Generated JSON draft with multi-track layout and transition markers</p>
             </div>
           </div>
-          <span class="text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-semibold">Verified Pass</span>
+          <span class="text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-semibold border border-emerald-100">Verified Pass</span>
         </div>
 
-        <div class="p-4 flex items-center justify-between">
+        <div class="p-4 flex items-center justify-between card-hover">
           <div class="flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
             <div>
               <span class="font-bold text-gray-900">Scene Assets Sync</span>
-              <span class="text-gray-400 text-[11px] ml-2">rcpt_4a1c9e88</span>
+              <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_4a1c9e88</span>
+              <p class="text-[11px] text-gray-500 mt-0.5">Synced 159 scene clips from Supabase studio assets bucket</p>
             </div>
           </div>
-          <span class="text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full font-semibold">Verified Pass</span>
+          <span class="text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-semibold border border-emerald-100">Verified Pass</span>
+        </div>
+
+        <div class="p-4 flex items-center justify-between card-hover">
+          <div class="flex items-center gap-3">
+            <span class="w-2.5 h-2.5 rounded-full ${channel.isConnected ? 'bg-emerald-500' : 'bg-amber-400'}"></span>
+            <div>
+              <span class="font-bold text-gray-900">YouTube Channel Link Check</span>
+              <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_yt_status</span>
+              <p class="text-[11px] text-gray-500 mt-0.5">${channel.isConnected ? `Connected to ${channel.title}` : 'Channel authorization pending'}</p>
+            </div>
+          </div>
+          <span class="${channel.isConnected ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : 'text-amber-800 bg-amber-50 border-amber-200'} px-3 py-1 rounded-full font-semibold border">
+            ${channel.isConnected ? 'Active' : 'Action Needed'}
+          </span>
         </div>
       </div>
     </div>
 
     <!-- TAB 5: CONNECTIONS VIEW -->
-    <div id="view-connections" class="hidden space-y-6">
+    <div id="view-connections" class="space-y-6 ${initialTab === 'connections' ? 'fade-in' : 'hidden'}">
       <div>
         <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Connections & Tools</h2>
-        <p class="text-xs text-gray-500 mt-0.5">Integrations powering your creator workforce</p>
+        <p class="text-xs text-gray-500 mt-0.5">Live status of external integrations and creator applications</p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <!-- YouTube Card -->
-        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4 card-hover">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center font-black text-white text-xs">YT</div>
+              <div class="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center font-black text-white text-xs shadow-sm">YT</div>
               <div>
                 <h4 class="text-sm font-bold text-gray-900">YouTube Channel</h4>
                 <p class="text-xs text-gray-500">Video Publishing & Scheduling</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${channel.isConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}">
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${channel.isConnected ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">
               ${channel.isConnected ? 'Connected' : 'Sign-in Needed'}
             </span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
             ${channel.isConnected
-              ? `Channel: <strong>${channel.title}</strong> (${channel.subscriberCount || '0'} subs). Ready to upload private releases.`
+              ? `Channel: <strong>${channel.title}</strong> (${channel.subscriberCount || '0'} subs). All video releases upload in private mode for safety.`
               : 'Sign in with Lams Google account to enable private uploads and scheduled publishing.'}
           </p>
-          <a href="${channel.authUrl}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition">
+          <a href="${channel.authUrl}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition shadow-sm">
             ${channel.isConnected ? 'Re-link Channel' : 'Connect YouTube Account'}
           </a>
         </div>
 
         <!-- Supabase Database -->
-        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4 card-hover">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center font-black text-white text-xs">DB</div>
+              <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center font-black text-white text-xs shadow-sm">DB</div>
               <div>
                 <h4 class="text-sm font-bold text-gray-900">Supabase Database</h4>
                 <p class="text-xs text-gray-500">Live Production Storage</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Connected</span>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Connected</span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
             Connected to project <code class="bg-gray-100 text-indigo-700 px-1.5 py-0.5 rounded font-mono">sobgbrdggmgwajrqjosq</code>. Tracking 48 episodes and 159 scene clips.
@@ -538,16 +585,16 @@ export function renderDashboardHtml(
         </div>
 
         <!-- CapCut Desktop -->
-        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4 card-hover">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-cyan-600 flex items-center justify-center font-black text-white text-xs">CC</div>
+              <div class="w-9 h-9 rounded-xl bg-cyan-600 flex items-center justify-center font-black text-white text-xs shadow-sm">CC</div>
               <div>
                 <h4 class="text-sm font-bold text-gray-900">CapCut Desktop</h4>
                 <p class="text-xs text-gray-500">Timeline & Draft Injection</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Ready</span>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Ready</span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
             Assembles multi-track JSON drafts with local audio, video clips, and transition points.
@@ -555,16 +602,16 @@ export function renderDashboardHtml(
         </div>
 
         <!-- Video Rendering Engine -->
-        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-sm space-y-4 card-hover">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center font-black text-white text-xs">FF</div>
+              <div class="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center font-black text-white text-xs shadow-sm">FF</div>
               <div>
                 <h4 class="text-sm font-bold text-gray-900">Video Rendering Engine</h4>
                 <p class="text-xs text-gray-500">Local Headless Stitching</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Installed</span>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Installed</span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
             Deterministic rendering substrate for video concatenation, transitions, and audio ducking.
@@ -769,48 +816,98 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <script>
     let activeReleaseEpId = '${currentEpisode.id}';
+    let currentTab = '${initialTab}';
 
     // Set default tomorrow date
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     document.getElementById('releaseDate').value = tomorrow.toISOString().split('T')[0];
 
-    // Tab Switching
-    function switchTab(tabId) {
+    // Tab Switching with URL History and Smooth Animation
+    function switchTab(tabId, pushHistory = true) {
+      currentTab = tabId;
       ['home', 'episodes', 'skills', 'activity', 'connections'].forEach(t => {
         const view = document.getElementById('view-' + t);
         const nav = document.getElementById('nav-' + t);
+        if (!view || !nav) return;
+
         if (t === tabId) {
           view.classList.remove('hidden');
+          view.classList.add('fade-in');
           nav.classList.add('bg-[#ede9fe]', 'text-[#4338ca]', 'font-semibold');
-          nav.classList.remove('text-gray-600');
+          nav.classList.remove('text-gray-600', 'font-medium');
+          const icon = nav.querySelector('svg');
+          if (icon) {
+            icon.classList.add('text-[#4338ca]');
+            icon.classList.remove('text-gray-400');
+          }
         } else {
           view.classList.add('hidden');
+          view.classList.remove('fade-in');
           nav.classList.remove('bg-[#ede9fe]', 'text-[#4338ca]', 'font-semibold');
-          nav.classList.add('text-gray-600');
+          nav.classList.add('text-gray-600', 'font-medium');
+          const icon = nav.querySelector('svg');
+          if (icon) {
+            icon.classList.remove('text-[#4338ca]');
+            icon.classList.add('text-gray-400');
+          }
         }
       });
+
+      if (pushHistory) {
+        const targetUrl = tabId === 'home' ? '/' : '/' + tabId;
+        if (window.location.pathname !== targetUrl) {
+          history.pushState({ tab: tabId }, '', targetUrl);
+        }
+      }
     }
+
+    // Handle browser Back / Forward buttons
+    window.addEventListener('popstate', (e) => {
+      const path = window.location.pathname.replace(/^\\//, '') || 'home';
+      const validTabs = ['home', 'episodes', 'skills', 'activity', 'connections'];
+      const targetTab = validTabs.includes(path) ? path : 'home';
+      switchTab(targetTab, false);
+    });
 
     // Filter Episodes in Episodes Tab
     function filterEpisodes(status) {
       const cards = document.querySelectorAll('#allEpisodesGrid > div');
       cards.forEach(c => {
-        if (status === 'all') {
+        const cardStatus = c.getAttribute('data-status');
+        if (status === 'all' || cardStatus === status) {
           c.style.display = '';
         } else {
-          const badge = c.querySelector('span.uppercase');
-          if (badge && badge.innerText.includes(status.toUpperCase())) {
-            c.style.display = '';
-          } else {
-            c.style.display = 'none';
-          }
+          c.style.display = 'none';
+        }
+      });
+
+      // Update button highlights
+      ['all', 'review', 'draft', 'scheduled'].forEach(btnKey => {
+        const btn = document.getElementById('filter-btn-' + btnKey);
+        if (!btn) return;
+        if ((btnKey === 'all' && status === 'all') || btnKey.toLowerCase() === status.toLowerCase()) {
+          btn.classList.add('bg-[#4338ca]', 'text-white');
+          btn.classList.remove('bg-gray-100', 'text-gray-700', 'bg-amber-100', 'text-amber-900', 'bg-emerald-100', 'text-emerald-900');
+        } else {
+          btn.classList.remove('bg-[#4338ca]', 'text-white');
         }
       });
     }
 
-    function selectEpisode(id) {
-      window.location.search = '?episodeId=' + id;
+    // Live Search Filter for Episodes
+    function filterEpisodesBySearch(query) {
+      const clean = (query || '').toLowerCase().trim();
+      const cards = document.querySelectorAll('#allEpisodesGrid > div');
+      cards.forEach(c => {
+        const title = decodeURIComponent(c.getAttribute('data-title') || '');
+        const project = decodeURIComponent(c.getAttribute('data-project') || '');
+        if (!clean || title.includes(clean) || project.includes(clean)) {
+          c.style.display = '';
+        } else {
+          c.style.display = 'none';
+        }
+      });
     }
 
     // Chat Logic

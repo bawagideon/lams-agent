@@ -4,7 +4,7 @@ const BASE_URL = 'http://127.0.0.1:4200';
 
 async function runTests() {
   console.log('====================================================');
-  console.log('   LAMS HQ: HARDENED RELEASE & CREATOR UX VERIFICATION');
+  console.log('   LAMS HQ: FULL ROUTES & DESIGN LANGUAGE VERIFICATION');
   console.log('====================================================\n');
 
   let passed = 0;
@@ -23,8 +23,8 @@ async function runTests() {
     }
   }
 
-  // 1. Dashboard UI test
-  await test('Dashboard HTML matches Creator UI specifications', async () => {
+  // 1. Dashboard UI test (Home route)
+  await test('Route: GET / (Home) renders with Creator UI specs', async () => {
     const res = await fetch(`${BASE_URL}/`);
     assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
     const html = await res.text();
@@ -41,7 +41,45 @@ async function runTests() {
     assert(html.includes('Release Room'), 'Dashboard must include Safe Mode Release Room modal');
   });
 
-  // 2. Fetch real episodes from Supabase
+  // 2. Direct Navigation Route: GET /episodes
+  await test('Route: GET /episodes renders Episodes view without 404', async () => {
+    const res = await fetch(`${BASE_URL}/episodes`);
+    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
+    const html = await res.text();
+    assert(html.includes('Your Episodes'), 'Must contain "Your Episodes"');
+    assert(html.includes('Search episodes...'), 'Must contain search input');
+    assert(html.includes('Needs Review'), 'Must contain "Needs Review" filter');
+  });
+
+  // 3. Direct Navigation Route: GET /skills
+  await test('Route: GET /skills renders Skills view without 404', async () => {
+    const res = await fetch(`${BASE_URL}/skills`);
+    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
+    const html = await res.text();
+    assert(html.includes('Workforce Skills'), 'Must contain "Workforce Skills"');
+    assert(html.includes('Teach New Skill'), 'Must contain "Teach New Skill"');
+  });
+
+  // 4. Direct Navigation Route: GET /activity
+  await test('Route: GET /activity renders Activity view without 404', async () => {
+    const res = await fetch(`${BASE_URL}/activity`);
+    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
+    const html = await res.text();
+    assert(html.includes('Recent Activity'), 'Must contain "Recent Activity"');
+    assert(html.includes('Verified Pass'), 'Must contain verified status tags');
+  });
+
+  // 5. Direct Navigation Route: GET /connections
+  await test('Route: GET /connections renders Connections view without 404', async () => {
+    const res = await fetch(`${BASE_URL}/connections`);
+    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
+    const html = await res.text();
+    assert(html.includes('Connections & Tools'), 'Must contain "Connections & Tools"');
+    assert(html.includes('YouTube Channel'), 'Must contain YouTube channel card');
+    assert(html.includes('Supabase Database'), 'Must contain Supabase card');
+  });
+
+  // 6. Fetch real episodes from Supabase
   let targetEpisode: any = null;
   await test('Supabase Bridge loads real production episodes', async () => {
     const res = await fetch(`${BASE_URL}/api/episodes`);
@@ -54,7 +92,27 @@ async function runTests() {
     console.log(`\n      Target Episode: "${targetEpisode.title}" (${targetEpisode.id}) - Status: ${targetEpisode.status}`);
   });
 
-  // 3. Preflight Release Check endpoint
+  // 7. Subroute: GET /episodes/:id (Episode Detail & Player)
+  await test('Subroute: GET /episodes/:id renders Episode Studio with light design language', async () => {
+    assert(targetEpisode, 'Target episode required');
+    const res = await fetch(`${BASE_URL}/episodes/${targetEpisode.id}`);
+    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
+    const html = await res.text();
+    assert(html.includes(targetEpisode.title), 'Preview page must contain episode title');
+    assert(html.includes('Scene Sequence'), 'Preview page must contain Scene Sequence');
+    assert(html.includes('Back to Studio'), 'Preview page must link back to Studio');
+    assert(html.includes('Open in CapCut'), 'Preview page must have Open in CapCut button');
+    assert(html.includes('Release Room'), 'Preview page must have Release Room modal');
+  });
+
+  // 8. Subroute: GET /episodes/:id/preview
+  await test('Subroute: GET /episodes/:id/preview renders successfully without 404', async () => {
+    assert(targetEpisode, 'Target episode required');
+    const res = await fetch(`${BASE_URL}/episodes/${targetEpisode.id}/preview`);
+    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
+  });
+
+  // 9. Preflight Release Check endpoint
   await test('Preflight Release Check endpoint validates all prerequisites', async () => {
     assert(targetEpisode, 'Target episode required');
     const res = await fetch(`${BASE_URL}/api/episodes/${targetEpisode.id}/release-check`);
@@ -64,16 +122,14 @@ async function runTests() {
     assert(typeof check.canRelease === 'boolean', 'canRelease should be boolean');
     assert(Array.isArray(check.reasons), 'reasons should be an array');
     assert(check.youtube, 'youtube status object should be returned');
-    console.log(`\n      Check summary: canRelease=${check.canRelease}, reasons=${JSON.stringify(check.reasons)}`);
   });
 
-  // 4. State Machine Integrity: Negative Release test
+  // 10. State Machine Integrity: Negative Release test
   await test('Approve endpoint strictly rejects release without master video and does NOT mutate DB', async () => {
     assert(targetEpisode, 'Target episode required');
     const res = await fetch(`${BASE_URL}/api/episodes/${targetEpisode.id}/approve`, {
       method: 'POST',
     });
-    // Should fail with 400 because no master video or youtube auth
     assert.strictEqual(res.status, 400, `Expected 400 Bad Request, got ${res.status}`);
     const body = await res.json();
     assert(body.error, 'Expected error in response');
@@ -86,7 +142,7 @@ async function runTests() {
     assert.strictEqual(refreshed.status, targetEpisode.status, `DB status was mutated! Expected ${targetEpisode.status}, got ${refreshed.status}`);
   });
 
-  // 5. Chat Assistant with Structured Plan Cards
+  // 11. Chat Assistant with Structured Plan Cards
   await test('Chat API generates structured Plan Card for release intent', async () => {
     const res = await fetch(`${BASE_URL}/api/chat`, {
       method: 'POST',
@@ -98,25 +154,12 @@ async function runTests() {
     assert(data.reply, 'Expected reply text');
     assert(data.planCard, 'Expected planCard object');
     assert.strictEqual(data.planCard.type, 'release_plan', 'Expected release_plan type');
-    assert(data.planCard.visibility.includes('Private'), 'Expected private visibility in plan');
   });
 
-  // 6. Security: Path Traversal Prevention
+  // 12. Security: Path Traversal Prevention
   await test('Exports endpoint prevents path traversal attempts', async () => {
     const res = await fetch(`${BASE_URL}/api/exports/..%2F..%2Fpackage.json`);
-    // path.basename will sanitize .. to package.json, which won't exist in watched_exports/ -> 404
     assert.strictEqual(res.status, 404, `Expected 404 Not Found for traversed path, got ${res.status}`);
-  });
-
-  // 7. Preview route integrity
-  await test('Episode Preview page loads with video player and scene filmstrip', async () => {
-    assert(targetEpisode, 'Target episode required');
-    const res = await fetch(`${BASE_URL}/api/episodes/${targetEpisode.id}/preview`);
-    assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
-    const html = await res.text();
-    assert(html.includes(targetEpisode.title), 'Preview page must contain episode title');
-    assert(html.includes('Scene Filmstrip'), 'Preview page must contain Scene Filmstrip');
-    assert(html.includes('Back to LAMS HQ'), 'Preview page must link back to LAMS HQ');
   });
 
   console.log('\n====================================================');

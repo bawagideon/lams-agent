@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node --experimental-strip-types src/index.ts",
     "dev": "node --experimental-strip-types src/index.ts",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit && node -e \"const fs=require('fs');if(!fs.existsSync('public'))fs.mkdirSync('public');\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

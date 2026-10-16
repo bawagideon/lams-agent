@@ -43,9 +43,12 @@ export class MissionControlServer {
     const url = new URL(req.url || '/', `http://localhost:${this.port}`);
     const method = req.method || 'GET';
 
-    // 1. Live Creator Cockpit Home UI
-    if (method === 'GET' && url.pathname === '/') {
+    const pageRoutes = ['/', '/home', '/episodes', '/skills', '/activity', '/connections'];
+
+    // 1. Live Creator Studio Pages (Home, Episodes, Skills, Activity, Connections)
+    if (method === 'GET' && pageRoutes.includes(url.pathname)) {
       try {
+        const initialTab = url.pathname === '/' || url.pathname === '/home' ? 'home' : url.pathname.slice(1);
         const selectedEpId = url.searchParams.get('episodeId') || undefined;
         const [episodes, channel] = await Promise.all([
           this.bridge.getRealEpisodes(),
@@ -55,7 +58,7 @@ export class MissionControlServer {
         const skills = this.skillRegistry.listSkills();
         const exports = this.exportWatcher.listExportedVideos();
 
-        const html = renderDashboardHtml(episodes, metrics, channel, skills, exports, selectedEpId);
+        const html = renderDashboardHtml(episodes, metrics, channel, skills, exports, selectedEpId, initialTab);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
       } catch (err: any) {
@@ -81,17 +84,17 @@ export class MissionControlServer {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`
           <html>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 60px; background: #0b0f19; color: #f8fafc;">
-              <h1 style="color: #22c55e;">✓ YouTube Channel Successfully Connected!</h1>
-              <p style="font-size: 18px; margin-top: 10px;">Connected as: <strong>${result.channelTitle}</strong></p>
-              <p style="color: #94a3b8; font-size: 14px;">Your studio is now ready to schedule private releases.</p>
-              <a href="/" style="display: inline-block; margin-top: 24px; background: #6366f1; color: white; padding: 12px 28px; border-radius: 12px; text-decoration: none; font-weight: bold;">Return to Studio</a>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 60px; background: #f8fafc; color: #0f172a;">
+              <h1 style="color: #16a34a; font-size: 24px; font-weight: bold;">✓ YouTube Channel Successfully Connected!</h1>
+              <p style="font-size: 16px; margin-top: 10px; color: #334155;">Connected as: <strong>${result.channelTitle}</strong></p>
+              <p style="color: #64748b; font-size: 13px;">Your studio is now ready to schedule private releases.</p>
+              <a href="/connections" style="display: inline-block; margin-top: 24px; background: #4338ca; color: white; padding: 12px 28px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 14px;">Return to Studio</a>
             </body>
           </html>
         `);
       } catch (authErr: any) {
         res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(`<h1>Connection Notice</h1><p>${authErr.message}</p><p><a href="/">Back to Studio</a></p>`);
+        res.end(`<h1>Connection Notice</h1><p>${authErr.message}</p><p><a href="/connections">Back to Studio</a></p>`);
       }
       return;
     }
@@ -110,9 +113,15 @@ export class MissionControlServer {
       return;
     }
 
-    // 3. Episode Scene Preview Player UI
-    if (method === 'GET' && url.pathname.startsWith('/api/episodes/') && url.pathname.endsWith('/preview')) {
-      const episodeId = url.pathname.split('/')[3];
+    // 3. Episode Scene Preview Player UI (handles /episodes/:id, /episodes/:id/preview, and /api/episodes/:id/preview)
+    const isEpisodePreviewRoute = method === 'GET' && (
+      (url.pathname.startsWith('/episodes/') && !pageRoutes.includes(url.pathname)) ||
+      (url.pathname.startsWith('/api/episodes/') && url.pathname.endsWith('/preview'))
+    );
+
+    if (isEpisodePreviewRoute) {
+      const cleanPath = url.pathname.replace(/^\/(api\/)?episodes\//, '').replace(/\/preview$/, '');
+      const episodeId = cleanPath.split('/')[0];
       try {
         const [episodeDetails, channel] = await Promise.all([
           this.bridge.getEpisodeDetails(episodeId),
@@ -121,7 +130,15 @@ export class MissionControlServer {
 
         if (!episodeDetails) {
           res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(`<h1>Episode not found</h1><p><a href="/">Return to Studio</a></p>`);
+          res.end(`
+            <html>
+              <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 60px; background: #f8fafc; color: #0f172a;">
+                <h1 style="font-size: 24px; font-weight: bold;">Episode Not Found</h1>
+                <p style="color: #64748b; margin-top: 8px;">The requested episode could not be found in your database.</p>
+                <a href="/episodes" style="display: inline-block; margin-top: 20px; background: #4338ca; color: white; padding: 10px 24px; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 14px;">Back to Episodes</a>
+              </body>
+            </html>
+          `);
           return;
         }
 
