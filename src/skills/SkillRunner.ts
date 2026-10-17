@@ -141,6 +141,54 @@ export class SkillRunner {
               outputData: { status: 'FAILED', error: 'Postcondition failed: No valid YouTube videoId returned.' },
             };
           }
+        } else if (condition === 'video_verified_on_youtube') {
+          const uploadOut = outputData['publisher.upload_video'];
+          const videoId = uploadOut?.videoId;
+          if (!videoId) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: 'Postcondition failed: No videoId available to verify on YouTube.' }
+            );
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: 'No videoId available to verify on YouTube.' },
+            };
+          }
+
+          if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET && config.GOOGLE_REFRESH_TOKEN) {
+            try {
+              const publisher = new YouTubePublisher(
+                config.GOOGLE_CLIENT_ID,
+                config.GOOGLE_CLIENT_SECRET,
+                config.GOOGLE_REFRESH_TOKEN
+              );
+              const verified = await publisher.verifyVideo(videoId);
+              if (!verified.exists) {
+                throw new Error(`Video ID ${videoId} not confirmed by YouTube.`);
+              }
+            } catch (err: any) {
+              const failedReceipt = generateEvidenceReceipt(
+                missionId,
+                skill.id,
+                skill.version,
+                `Agent Executor (${skill.name})`,
+                'FAILED',
+                startedAt,
+                stepsEvidence,
+                { error: `Postcondition failed: Video live verification failed (${err.message})` }
+              );
+              return {
+                receipt: failedReceipt,
+                outputData: { status: 'FAILED', error: `YouTube live verification failed: ${err.message}` },
+              };
+            }
+          }
         } else if (condition === 'draft_content_json_exists') {
           const draftOut = outputData['editor.write_capcut_draft'];
           if (!draftOut || !draftOut.draftPath || !fs.existsSync(path.join(draftOut.draftPath, 'draft_content.json'))) {
@@ -303,14 +351,95 @@ export class SkillRunner {
         };
       }
 
-      case 'publisher.set_metadata':
-        return { titleApplied: params.title || 'Episode Release', categoryId: '27' };
+      case 'publisher.set_metadata': {
+        const videoId = params.videoId || currentOutputs['publisher.upload_video']?.videoId;
+        if (!videoId) {
+          throw new Error('Cannot set YouTube metadata: No videoId found from upload step or params.');
+        }
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+          throw new Error('Cannot set YouTube metadata: Missing YouTube OAuth credentials.');
+        }
 
-      case 'publisher.set_thumbnail':
-        return { thumbnailSet: !!params.thumbnailFilePath };
+        const publisher = new YouTubePublisher(
+          config.GOOGLE_CLIENT_ID,
+          config.GOOGLE_CLIENT_SECRET,
+          config.GOOGLE_REFRESH_TOKEN
+        );
 
-      case 'publisher.set_schedule':
-        return { publishAt: params.publishAt || null, status: 'private' };
+        const res = await publisher.setMetadata(videoId, {
+          title: params.title,
+          description: params.description,
+          tags: params.tags,
+          categoryId: params.categoryId,
+        });
+
+        return {
+          videoId,
+          titleApplied: res.titleApplied,
+          descriptionApplied: res.descriptionApplied,
+          categoryId: res.categoryId,
+          tags: res.tags,
+        };
+      }
+
+      case 'publisher.set_thumbnail': {
+        const videoId = params.videoId || currentOutputs['publisher.upload_video']?.videoId;
+        const thumbnailPath = params.thumbnailFilePath || params.thumbnailPath;
+
+        if (!thumbnailPath) {
+          return { thumbnailSet: false, skipped: true, reason: 'no_thumbnail_provided' };
+        }
+
+        if (!videoId) {
+          throw new Error('Cannot set YouTube thumbnail: No videoId found from upload step or params.');
+        }
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+          throw new Error('Cannot set YouTube thumbnail: Missing YouTube OAuth credentials.');
+        }
+
+        const publisher = new YouTubePublisher(
+          config.GOOGLE_CLIENT_ID,
+          config.GOOGLE_CLIENT_SECRET,
+          config.GOOGLE_REFRESH_TOKEN
+        );
+
+        const res = await publisher.setThumbnail(videoId, thumbnailPath);
+        return {
+          videoId,
+          thumbnailSet: true,
+          thumbnailUrl: res.thumbnailUrl,
+        };
+      }
+
+      case 'publisher.set_schedule': {
+        const videoId = params.videoId || currentOutputs['publisher.upload_video']?.videoId;
+        const publishAt = params.publishAt;
+
+        if (!publishAt) {
+          return { scheduled: false, privacyStatus: 'private', reason: 'no_schedule_specified' };
+        }
+
+        if (!videoId) {
+          throw new Error('Cannot configure YouTube schedule: No videoId found from upload step or params.');
+        }
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+          throw new Error('Cannot configure YouTube schedule: Missing YouTube OAuth credentials.');
+        }
+
+        const publisher = new YouTubePublisher(
+          config.GOOGLE_CLIENT_ID,
+          config.GOOGLE_CLIENT_SECRET,
+          config.GOOGLE_REFRESH_TOKEN
+        );
+
+        const res = await publisher.setSchedule(videoId, publishAt);
+        return {
+          videoId,
+          publishAt: res.publishAt,
+          privacyStatus: res.privacyStatus,
+          scheduled: true,
+        };
+      }
 
       default:
         throw new Error(`Unsupported skill action '${action}'. Execution halted to preserve integrity.`);

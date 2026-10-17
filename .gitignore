@@ -13,6 +13,7 @@ test_output/
 watched_exports/
 dist/
 .vercel/
+data/
 
 # Logs & System Files
 *.log

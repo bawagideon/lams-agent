@@ -1,5 +1,6 @@
 import type { RealEpisodeDetails } from '../../bridge/YTEngineBridge.ts';
 import type { ExportedVideoFile } from '../../adapters/media/ExportFolderWatcher.ts';
+import { escapeHtml } from '../utils/htmlEscape.ts';
 
 export function renderPreviewHtml(
   episode: RealEpisodeDetails,
@@ -14,7 +15,7 @@ export function renderPreviewHtml(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${episode.title} — Episode Studio | LAMS HQ</title>
+  <title>${escapeHtml(episode.title)} — Episode Studio | LAMS HQ</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -66,28 +67,28 @@ export function renderPreviewHtml(
 
       <div>
         <div class="flex items-center gap-2">
-          <span class="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">${episode.projectName}</span>
+          <span class="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">${escapeHtml(episode.projectName)}</span>
           <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
             episode.status === 'Review' ? 'bg-[#fef3c7] text-[#92400e]' :
             episode.status === 'Scheduled' ? 'bg-emerald-50 text-emerald-700' :
             'bg-gray-100 text-gray-600'
           }">
-            ${episode.status === 'Review' ? 'In review' : episode.status}
+            ${escapeHtml(episode.status === 'Review' ? 'In review' : episode.status)}
           </span>
         </div>
-        <h1 class="text-lg font-black text-gray-900 mt-0.5 leading-snug">${episode.title}</h1>
+        <h1 class="text-lg font-black text-gray-900 mt-0.5 leading-snug">${escapeHtml(episode.title)}</h1>
       </div>
     </div>
 
     <!-- Actions Header -->
     <div class="flex items-center gap-3">
-      <button onclick="triggerCapCutDraft('${episode.id}')" id="btnCapCutTop" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+      <button onclick="triggerCapCutDraft('${escapeHtml(episode.id)}')" id="btnCapCutTop" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
         ✂️ Open in CapCut
       </button>
-      <button onclick="triggerFfmpegRender('${episode.id}')" id="btnRenderTop" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+      <button onclick="triggerFfmpegRender('${escapeHtml(episode.id)}')" id="btnRenderTop" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
         ⚡ Render Video
       </button>
-      <button onclick="openReleaseRoom('${episode.id}')" id="btnApproveTop" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition">
+      <button onclick="openReleaseRoom('${escapeHtml(episode.id)}')" id="btnApproveTop" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition">
         <span>Go to release</span>
       </button>
     </div>
@@ -106,7 +107,7 @@ export function renderPreviewHtml(
         <div class="relative bg-black rounded-2xl overflow-hidden aspect-video flex items-center justify-center border border-gray-200 shadow-inner">
           ${initialVideoUrl ? `
             <video id="mainVideoPlayer" controls autoplay playsinline class="w-full h-full object-contain">
-              <source src="${initialVideoUrl}" type="video/mp4">
+              <source src="${escapeHtml(initialVideoUrl)}" type="video/mp4">
               Your browser does not support the video tag.
             </video>
           ` : `
@@ -123,7 +124,7 @@ export function renderPreviewHtml(
           <div class="flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span id="playerCurrentLabel" class="font-semibold text-gray-800 truncate">
-              ${exportedVideo ? `Master Export: ${exportedVideo.fileName}` : (scenesWithVideo[0] ? `Scene 1: ${scenesWithVideo[0].title}` : 'No clip loaded')}
+              ${exportedVideo ? `Master Export: ${escapeHtml(exportedVideo.fileName)}` : (scenesWithVideo[0] ? `Scene 1: ${escapeHtml(scenesWithVideo[0].title)}` : 'No clip loaded')}
             </span>
           </div>
           <span class="font-medium text-gray-500">
@@ -147,8 +148,8 @@ export function renderPreviewHtml(
         <div class="space-y-3 max-h-[420px] overflow-y-auto pr-1">
           ${episode.scenes.map((sc, idx) => `
             <div 
-              id="scene-card-${sc.id}"
-              onclick="playScene('${sc.videoUrl}', '${sc.sceneNumber}', '${encodeURIComponent(sc.title)}', '${sc.id}', '${encodeURIComponent(sc.visualPrompt || '')}')"
+              id="scene-card-${escapeHtml(sc.id)}"
+              onclick="playScene('${encodeURIComponent(sc.videoUrl || '')}', '${sc.sceneNumber}', '${encodeURIComponent(sc.title)}', '${escapeHtml(sc.id)}', '${encodeURIComponent(sc.visualPrompt || '')}')"
               class="p-4 bg-gray-50/80 border border-gray-200 hover:border-indigo-300 rounded-2xl cursor-pointer transition flex items-start gap-4 group card-hover ${idx === 0 && !exportedVideo ? 'active-scene-card' : ''}"
             >
               <div class="flex-shrink-0 w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-[#4338ca] group-hover:bg-[#4338ca] group-hover:text-white transition shadow-sm">
@@ -156,12 +157,12 @@ export function renderPreviewHtml(
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between">
-                  <h4 class="text-xs font-bold text-gray-900 truncate">${sc.title}</h4>
+                  <h4 class="text-xs font-bold text-gray-900 truncate">${escapeHtml(sc.title)}</h4>
                   <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${sc.videoUrl ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}">
                     ${sc.duration}s • ${sc.videoUrl ? 'Ready' : 'Rendering'}
                   </span>
                 </div>
-                <p class="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">${sc.visualPrompt || 'No visual description'}</p>
+                <p class="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">${escapeHtml(sc.visualPrompt || 'No visual description')}</p>
               </div>
               <div class="flex-shrink-0 text-gray-400 group-hover:text-[#4338ca] transition pt-1">
                 ▶
@@ -179,9 +180,9 @@ export function renderPreviewHtml(
       <!-- Episode Premise Card -->
       <div class="bg-white border border-gray-200/80 rounded-3xl p-6 shadow-sm space-y-3">
         <h3 class="text-sm font-bold text-gray-900">Episode Premise</h3>
-        <p class="text-xs text-gray-600 leading-relaxed">${episode.topic}</p>
+        <p class="text-xs text-gray-600 leading-relaxed">${escapeHtml(episode.topic)}</p>
         <div class="pt-2 flex items-center justify-between text-xs text-gray-400 border-t border-gray-100">
-          <span>Project: <strong class="text-gray-700">${episode.projectName}</strong></span>
+          <span>Project: <strong class="text-gray-700">${escapeHtml(episode.projectName)}</strong></span>
           <span>Created: <strong class="text-gray-700">${new Date(episode.createdAt).toLocaleDateString()}</strong></span>
         </div>
       </div>
@@ -195,7 +196,7 @@ export function renderPreviewHtml(
           </span>
         </div>
         <div id="activeScenePromptText" class="p-3.5 bg-gray-50 border border-gray-100 rounded-2xl text-xs text-gray-700 leading-relaxed font-normal italic">
-          ${episode.scenes[0]?.visualPrompt || 'Select a scene to inspect its script and visual directions.'}
+          ${escapeHtml(episode.scenes[0]?.visualPrompt || 'Select a scene to inspect its script and visual directions.')}
         </div>
       </div>
 
@@ -213,7 +214,7 @@ export function renderPreviewHtml(
 
         ${exportedVideo ? `
           <div class="p-3.5 bg-emerald-50/60 border border-emerald-100 rounded-2xl space-y-2 text-xs">
-            <div class="font-bold text-emerald-950 truncate">${exportedVideo.fileName}</div>
+            <div class="font-bold text-emerald-950 truncate">${escapeHtml(exportedVideo.fileName)}</div>
             <div class="text-[11px] text-emerald-800">${exportedVideo.sizeMb} MB • Modified ${new Date(exportedVideo.modifiedAt).toLocaleTimeString()}</div>
             <button onclick="playMasterVideo('/api/exports/${encodeURIComponent(exportedVideo.fileName)}', '${encodeURIComponent(exportedVideo.fileName)}')" class="mt-1 w-full text-center bg-white hover:bg-emerald-50 text-emerald-800 font-semibold py-1.5 rounded-xl border border-emerald-200 transition">
               ▶ Load Master in Player
@@ -222,7 +223,7 @@ export function renderPreviewHtml(
         ` : `
           <div class="p-4 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-center text-xs text-gray-500 space-y-2">
             <p>No master export detected yet. After editing in CapCut, export to the <code class="text-indigo-600 font-mono">watched_exports</code> folder or click below to render via FFmpeg.</p>
-            <button onclick="triggerFfmpegRender('${episode.id}')" class="bg-white hover:bg-gray-100 text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-200 transition shadow-sm">
+            <button onclick="triggerFfmpegRender('${escapeHtml(episode.id)}')" class="bg-white hover:bg-gray-100 text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-200 transition shadow-sm">
               Render Video with FFmpeg
             </button>
           </div>
@@ -249,103 +250,113 @@ export function renderPreviewHtml(
   </main>
 
   <!-- ============================================================ -->
-  <!-- 3. SAFE MODE RELEASE ROOM MODAL                              -->
+  <!-- 3. SAFE-MODE RELEASE ROOM MODAL                              -->
   <!-- ============================================================ -->
-  <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-    <div class="bg-white max-w-xl w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
-      <!-- Modal Header -->
-      <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+  <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-7 shadow-2xl border border-gray-200 space-y-5">
+      <div class="flex items-center justify-between">
         <div>
-          <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-600">SAFE MODE PUBLISHING</span>
-          <h3 class="text-lg font-black text-gray-900">Release Room: ${episode.title}</h3>
-          <p class="text-xs text-gray-500">Every upload starts private. Nothing goes public without your schedule.</p>
+          <span class="text-[11px] font-bold text-indigo-600 tracking-wide uppercase">Safe Mode Release Room</span>
+          <h3 class="text-lg font-black text-gray-900">Confirm YouTube Release</h3>
         </div>
-        <button onclick="closeReleaseRoom()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+        <button onclick="closeReleaseRoom()" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
       </div>
 
-      <!-- Preflight Checklist -->
-      <div class="space-y-3">
-        <h4 class="text-xs font-bold text-gray-800 uppercase tracking-wider">Preflight Checklist</h4>
-        <div id="preflightList" class="bg-gray-50 border border-gray-200/80 rounded-2xl p-4 space-y-3 text-xs">
-          <div class="text-center py-3 text-gray-400">Loading checklist...</div>
-        </div>
+      <p class="text-xs text-gray-500 leading-relaxed">
+        LAMS HQ will upload your video directly to YouTube as a <strong>Private video</strong>. It will not be visible to the public until you choose to publish it.
+      </p>
+
+      <!-- Preflight Checklist Container -->
+      <div id="preflightList" class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3 text-xs">
+        <div class="text-center py-3 text-gray-400">Checking release prerequisites...</div>
       </div>
 
-      <!-- Schedule Time -->
-      <div class="space-y-2">
-        <label class="block text-xs font-bold text-gray-800">Publication Time (Go Live)</label>
-        <div class="grid grid-cols-2 gap-3">
-          <input id="releaseDate" type="date" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
-          <input id="releaseTime" type="time" value="19:00" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
-        </div>
-      </div>
+      <!-- Status or Error Message -->
+      <div id="releaseStatusMessage" class="hidden text-xs rounded-xl p-3"></div>
 
-      <!-- Notice -->
-      <div id="releaseStatusMessage" class="hidden p-3 rounded-xl text-xs font-medium"></div>
-
-      <!-- Footer Buttons -->
-      <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-        <button onclick="closeReleaseRoom()" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+      <!-- Modal Action Buttons -->
+      <div class="flex items-center justify-end gap-3 pt-2">
+        <button onclick="closeReleaseRoom()" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
-        <button id="btnConfirmRelease" onclick="confirmAndPublish()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+        <button id="btnConfirmRelease" onclick="confirmAndPublish()" disabled class="bg-[#4338ca] hover:bg-[#3730a3] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-sm transition">
           Publish as Private Release
         </button>
       </div>
     </div>
   </div>
 
-  <!-- ============================================================ -->
-  <!-- 4. SCRIPT LOGIC                                              -->
-  <!-- ============================================================ -->
+  <!-- Interactive JavaScript -->
   <script>
-    const episodeId = '${episode.id}';
+    const episodeId = '${escapeHtml(episode.id)}';
+    let currentApprovalToken = null;
 
-    // Set default tomorrow date
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('releaseDate').value = tomorrow.toISOString().split('T')[0];
+    function playScene(urlEncoded, sceneNum, titleEncoded, sceneId, promptEncoded) {
+      const url = decodeURIComponent(urlEncoded);
+      const title = decodeURIComponent(titleEncoded);
+      const prompt = decodeURIComponent(promptEncoded);
 
-    function playScene(url, sceneNum, encodedTitle, sceneId, encodedPrompt) {
-      if (!url) {
-        alert('Scene #' + sceneNum + ' is still generating.');
-        return;
-      }
       const player = document.getElementById('mainVideoPlayer');
       const label = document.getElementById('playerCurrentLabel');
-      player.src = url;
-      player.play();
-      label.innerText = 'Scene #' + sceneNum + ': ' + decodeURIComponent(encodedTitle);
+      const promptBadge = document.getElementById('activeScenePromptBadge');
+      const promptText = document.getElementById('activeScenePromptText');
 
-      // Highlight card
-      document.querySelectorAll('[id^="scene-card-"]').forEach(c => c.classList.remove('active-scene-card'));
-      const activeCard = document.getElementById('scene-card-' + sceneId);
-      if (activeCard) activeCard.classList.add('active-scene-card');
-
-      // Update script preview box
-      if (encodedPrompt) {
-        document.getElementById('activeScenePromptText').innerText = decodeURIComponent(encodedPrompt);
-        document.getElementById('activeScenePromptBadge').innerText = 'Scene #' + sceneNum;
+      if (!url) {
+        alert('Scene video is still generating or not found.');
+        return;
       }
+
+      if (player) {
+        player.src = url;
+        player.play().catch(() => {});
+      }
+
+      if (label) {
+        label.innerText = 'Scene #' + sceneNum + ': ' + title;
+      }
+
+      if (promptBadge) {
+        promptBadge.innerText = 'Scene #' + sceneNum;
+      }
+
+      if (promptText) {
+        promptText.innerText = prompt || 'No prompt recorded for this scene.';
+      }
+
+      document.querySelectorAll('[id^="scene-card-"]').forEach(el => {
+        el.classList.remove('active-scene-card');
+      });
+      const card = document.getElementById('scene-card-' + sceneId);
+      if (card) card.classList.add('active-scene-card');
     }
 
-    function playMasterVideo(url, fileName) {
+    function playMasterVideo(url, fileNameEncoded) {
+      const fileName = decodeURIComponent(fileNameEncoded);
       const player = document.getElementById('mainVideoPlayer');
-      player.src = url;
-      player.play();
-      document.getElementById('playerCurrentLabel').innerText = 'Master Export: ' + decodeURIComponent(fileName);
-      document.querySelectorAll('[id^="scene-card-"]').forEach(c => c.classList.remove('active-scene-card'));
+      const label = document.getElementById('playerCurrentLabel');
+
+      if (player) {
+        player.src = url;
+        player.play().catch(() => {});
+      }
+      if (label) {
+        label.innerText = 'Master Export: ' + fileName;
+      }
+
+      document.querySelectorAll('[id^="scene-card-"]').forEach(el => {
+        el.classList.remove('active-scene-card');
+      });
     }
 
     async function triggerCapCutDraft(id) {
       const btn = document.getElementById('btnCapCutTop');
-      btn.innerText = 'Assembling...';
+      btn.innerText = 'Assembling CapCut...';
       btn.disabled = true;
       try {
         const res = await fetch('/api/episodes/' + id + '/capcut', { method: 'POST' });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        alert('✓ CapCut Draft Created!\\nPath: ' + data.draftPath + '\\nTracks: ' + data.tracksCount);
+        alert('✓ CapCut Draft Created!\\nLocation: ' + data.draftPath + '\\nOpen CapCut Desktop to see your timeline.');
       } catch (err) {
         alert('Error: ' + err.message);
       } finally {
@@ -380,8 +391,9 @@ export function renderPreviewHtml(
 
       modal.classList.remove('hidden');
       msg.classList.add('hidden');
-      list.innerHTML = '<div class="text-center py-3 text-gray-400">Checking release prerequisites...</div>';
+      list.innerHTML = '<div class="text-center py-3 text-gray-400">Checking release prerequisites & generating signed proposal...</div>';
       btn.disabled = true;
+      currentApprovalToken = null;
 
       try {
         const res = await fetch('/api/episodes/' + epId + '/release-check');
@@ -405,13 +417,24 @@ export function renderPreviewHtml(
 
         html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
         html += '<span class="flex items-center gap-2">🔒 <span>Privacy Setting</span></span>';
-        html += '<span class="font-bold text-indigo-700">Private Release (Safe)</span>';
+        html += '<span class="font-bold text-indigo-700">Private Release (Safe Mode)</span>';
         html += '</div>';
 
         list.innerHTML = html;
 
         if (check.canRelease) {
-          btn.disabled = false;
+          // Request signed proposal from server
+          const propRes = await fetch('/api/episodes/' + epId + '/propose-release', { method: 'POST' });
+          const propData = await propRes.json();
+          if (propData.success && propData.approvalToken) {
+            currentApprovalToken = propData.approvalToken;
+            btn.disabled = false;
+          } else {
+            btn.disabled = true;
+            msg.className = 'bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded-xl text-xs';
+            msg.innerHTML = '<strong>Proposal creation failed:</strong> ' + (propData.error || 'Unknown error');
+            msg.classList.remove('hidden');
+          }
         } else {
           btn.disabled = true;
           msg.className = 'bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded-xl text-xs';
@@ -434,7 +457,14 @@ export function renderPreviewHtml(
       btn.innerText = 'Publishing Privately...';
 
       try {
-        const res = await fetch('/api/episodes/' + episodeId + '/approve', { method: 'POST' });
+        const res = await fetch('/api/episodes/' + episodeId + '/approve', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Approval-Token': currentApprovalToken || '',
+          },
+          body: JSON.stringify({ approvalToken: currentApprovalToken }),
+        });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 

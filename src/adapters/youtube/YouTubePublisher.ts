@@ -175,4 +175,145 @@ export class YouTubePublisher {
       quotaCostEstimate: quotaCost,
     };
   }
+
+  /**
+   * Sets or updates video snippet metadata on YouTube via real API call.
+   */
+  public async setMetadata(
+    videoId: string,
+    metadata: { title?: string; description?: string; tags?: string[]; categoryId?: string }
+  ): Promise<{ titleApplied: string; descriptionApplied: string; categoryId: string; tags: string[] }> {
+    if (!videoId) {
+      throw new Error('Cannot set metadata: videoId is required.');
+    }
+
+    const snippet: youtube_v3.Schema$VideoSnippet = {
+      title: metadata.title || 'LAMS HQ Episode Release',
+      description: metadata.description || '',
+      tags: metadata.tags || [],
+      categoryId: metadata.categoryId || '27',
+    };
+
+    const updateRes = await this.youtube.videos.update({
+      part: ['snippet'],
+      requestBody: {
+        id: videoId,
+        snippet,
+      },
+    });
+
+    const updatedSnippet = updateRes.data.snippet;
+    return {
+      titleApplied: updatedSnippet?.title || snippet.title!,
+      descriptionApplied: updatedSnippet?.description || snippet.description!,
+      categoryId: updatedSnippet?.categoryId || snippet.categoryId!,
+      tags: updatedSnippet?.tags || snippet.tags!,
+    };
+  }
+
+  /**
+   * Sets a custom thumbnail for an uploaded YouTube video.
+   */
+  public async setThumbnail(
+    videoId: string,
+    thumbnailFilePath: string
+  ): Promise<{ thumbnailSet: boolean; thumbnailUrl?: string }> {
+    if (!videoId) {
+      throw new Error('Cannot set thumbnail: videoId is required.');
+    }
+    if (!thumbnailFilePath || !fs.existsSync(thumbnailFilePath)) {
+      throw new Error(`Thumbnail file not found at: ${thumbnailFilePath}`);
+    }
+
+    const res = await this.youtube.thumbnails.set({
+      videoId,
+      media: {
+        body: fs.createReadStream(thumbnailFilePath),
+      },
+    });
+
+    const defaultUrl = res.data.items?.[0]?.default?.url;
+    return {
+      thumbnailSet: true,
+      thumbnailUrl: defaultUrl || undefined,
+    };
+  }
+
+  /**
+   * Configures publication schedule for a private YouTube video.
+   * YouTube strictly requires privacyStatus = 'private' when publishAt is set.
+   */
+  public async setSchedule(
+    videoId: string,
+    publishAt: string
+  ): Promise<{ publishAt: string; privacyStatus: string; scheduled: boolean }> {
+    if (!videoId) {
+      throw new Error('Cannot set schedule: videoId is required.');
+    }
+    if (!publishAt) {
+      throw new Error('Cannot set schedule: publishAt timestamp is required.');
+    }
+
+    const scheduleDate = new Date(publishAt);
+    if (isNaN(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) {
+      throw new Error(`Invalid schedule: publishAt must be a valid future timestamp. Received: ${publishAt}`);
+    }
+
+    const isoSchedule = scheduleDate.toISOString();
+
+    const updateRes = await this.youtube.videos.update({
+      part: ['status'],
+      requestBody: {
+        id: videoId,
+        status: {
+          privacyStatus: 'private',
+          publishAt: isoSchedule,
+        },
+      },
+    });
+
+    const currentStatus = updateRes.data.status;
+    return {
+      publishAt: currentStatus?.publishAt || isoSchedule,
+      privacyStatus: currentStatus?.privacyStatus || 'private',
+      scheduled: true,
+    };
+  }
+
+  /**
+   * Reads back the live status of a video from YouTube to verify postconditions.
+   */
+  public async verifyVideo(videoId: string): Promise<{
+    exists: boolean;
+    videoId: string;
+    title: string;
+    uploadStatus: string;
+    privacyStatus: string;
+    publishAt?: string;
+    channelId: string;
+  }> {
+    if (!videoId) {
+      throw new Error('Cannot verify video: videoId is required.');
+    }
+
+    const res = await this.youtube.videos.list({
+      part: ['snippet', 'status'],
+      id: [videoId],
+    });
+
+    const item = res.data.items?.[0];
+    if (!item) {
+      throw new Error(`Verification failed: Video ID '${videoId}' was not found on YouTube.`);
+    }
+
+    return {
+      exists: true,
+      videoId,
+      title: item.snippet?.title || '',
+      uploadStatus: item.status?.uploadStatus || 'unknown',
+      privacyStatus: item.status?.privacyStatus || 'unknown',
+      publishAt: item.status?.publishAt || undefined,
+      channelId: item.snippet?.channelId || '',
+    };
+  }
 }

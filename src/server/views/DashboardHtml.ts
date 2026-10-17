@@ -2,6 +2,7 @@ import type { RealEpisode } from '../../bridge/YTEngineBridge.ts';
 import type { ChannelProfile } from '../../adapters/youtube/YouTubeLiveClient.ts';
 import type { SkillContract } from '../../contracts/SkillContract.ts';
 import type { ExportedVideoFile } from '../../adapters/media/ExportFolderWatcher.ts';
+import { escapeHtml } from '../utils/htmlEscape.ts';
 
 export function renderDashboardHtml(
   episodes: RealEpisode[],
@@ -1051,8 +1052,20 @@ export function renderDashboardHtml(
         list.innerHTML = html;
 
         if (check.canRelease) {
-          btn.disabled = false;
-          btn.classList.remove('opacity-50', 'cursor-not-allowed');
+          // Request signed proposal token
+          const propRes = await fetch('/api/episodes/' + activeReleaseEpId + '/propose-release', { method: 'POST' });
+          const propData = await propRes.json();
+          if (propData.success && propData.approvalToken) {
+            window.__activeApprovalToken = propData.approvalToken;
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+          } else {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            msg.className = 'bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded-xl text-xs';
+            msg.innerHTML = '<strong>Proposal creation failed:</strong> ' + (propData.error || 'Unknown error');
+            msg.classList.remove('hidden');
+          }
         } else {
           btn.disabled = true;
           btn.classList.add('opacity-50', 'cursor-not-allowed');
@@ -1067,6 +1080,7 @@ export function renderDashboardHtml(
 
     function closeReleaseRoom() {
       document.getElementById('releaseRoomModal').classList.add('hidden');
+      window.__activeApprovalToken = null;
     }
 
     async function confirmAndPublish() {
@@ -1076,7 +1090,15 @@ export function renderDashboardHtml(
       btn.innerText = 'Publishing Privately...';
 
       try {
-        const res = await fetch('/api/episodes/' + activeReleaseEpId + '/approve', { method: 'POST' });
+        const token = window.__activeApprovalToken || '';
+        const res = await fetch('/api/episodes/' + activeReleaseEpId + '/approve', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Approval-Token': token,
+          },
+          body: JSON.stringify({ approvalToken: token }),
+        });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
