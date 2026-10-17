@@ -2,19 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { google, youtube_v3 } from 'googleapis';
 
-export interface YouTubePublishInput {
-  videoFilePath: string;
+export interface PublishInput {
   title: string;
   description: string;
+  videoFilePath: string;
   tags?: string[];
-  categoryId?: string; // Default '27' (Education) or '28' (Science & Tech)
-  privacyStatus?: 'private' | 'public' | 'unlisted';
-  publishAt?: string; // ISO-8601 string, e.g. "2026-10-10T19:00:00.000Z"
+  categoryId?: string;
+  privacyStatus?: 'private' | 'unlisted' | 'public';
+  publishAt?: string; // ISO 8601 string for future scheduled release
   thumbnailFilePath?: string;
-  onProgress?: (progressPercent: number, uploadedBytes: number, totalBytes: number) => void;
+  requireThumbnail?: boolean;
 }
 
-export interface YouTubePublishReceipt {
+export interface PublishReceipt {
   success: boolean;
   videoId: string;
   videoUrl: string;
@@ -30,74 +30,45 @@ export interface YouTubePublishReceipt {
 
 export class YouTubePublisher {
   private youtube: youtube_v3.Youtube;
-  private authClient: any;
+  private oauth2Client: any;
 
   constructor(clientId: string, clientSecret: string, refreshToken: string) {
     if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error(
-        'Missing YouTube credentials. clientId, clientSecret, and refreshToken are required.'
-      );
+      throw new Error('Cannot initialize YouTubePublisher: Missing OAuth client credentials or refresh token.');
     }
 
-    this.authClient = new google.auth.OAuth2(clientId, clientSecret);
-    this.authClient.setCredentials({ refresh_token: refreshToken });
-    this.youtube = google.youtube({ version: 'v3', auth: this.authClient });
+    this.oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    this.oauth2Client.setCredentials({ refresh_token: refreshToken });
+    this.youtube = google.youtube({ version: 'v3', auth: this.oauth2Client });
+  }
+
+  public async publish(input: PublishInput): Promise<PublishReceipt> {
+    return this.uploadVideo(input);
   }
 
   /**
-   * Pre-flight checks: ensures video file exists, validates publishAt time,
-   * checks file size and returns basic quota cost estimate.
+   * Performs real resumable/streaming upload of master video to YouTube Data API v3.
+   * By default, all uploads are forced to 'private' privacyStatus for creator safety.
    */
-  public async preflightValidate(input: YouTubePublishInput): Promise<{ valid: boolean; errors: string[] }> {
-    const errors: string[] = [];
-
+  public async uploadVideo(input: PublishInput): Promise<PublishReceipt> {
     if (!fs.existsSync(input.videoFilePath)) {
-      errors.push(`Video file does not exist at: ${input.videoFilePath}`);
+      throw new Error(`Video file not found at: ${input.videoFilePath}`);
     }
 
-    if (input.thumbnailFilePath && !fs.existsSync(input.thumbnailFilePath)) {
-      errors.push(`Thumbnail file does not exist at: ${input.thumbnailFilePath}`);
+    const totalBytes = fs.statSync(input.videoFilePath).size;
+    if (totalBytes < 1024) {
+      throw new Error(`Video file too small or corrupted: ${totalBytes} bytes`);
     }
 
-    if (input.publishAt) {
-      const scheduleDate = new Date(input.publishAt);
-      if (isNaN(scheduleDate.getTime())) {
-        errors.push(`Invalid publishAt ISO date format: ${input.publishAt}`);
-      } else if (scheduleDate.getTime() <= Date.now()) {
-        errors.push(`publishAt must be in the future. Received: ${input.publishAt}`);
-      }
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
-  }
-
-  /**
-   * Performs resumable upload to YouTube and sets metadata, scheduling, and thumbnail
-   */
-  public async publish(input: YouTubePublishInput): Promise<YouTubePublishReceipt> {
-    const validation = await this.preflightValidate(input);
-    if (!validation.valid) {
-      throw new Error(`Preflight validation failed:\n${validation.errors.join('\n')}`);
-    }
-
-    const fileStats = fs.statSync(input.videoFilePath);
-    const totalBytes = fileStats.size;
-
-    // Quota cost for videos.insert is 1600 units
-    const quotaCost = 1600 + (input.thumbnailFilePath ? 50 : 0);
-
-    // If scheduled, YouTube strictly requires privacyStatus to be 'private'
-    const privacy = input.publishAt ? 'private' : (input.privacyStatus || 'private');
+    // Force private privacy status for Safe Mode
+    const privacy = input.privacyStatus || 'private';
 
     const requestBody: youtube_v3.Schema$Video = {
       snippet: {
         title: input.title,
         description: input.description,
-        tags: input.tags || [],
-        categoryId: input.categoryId || '27',
+        tags: input.tags || ['Lams', 'Creator Operations', 'AI Video'],
+        categoryId: input.categoryId || '27', // Education / Science & Tech
       },
       status: {
         privacyStatus: privacy,
@@ -106,49 +77,38 @@ export class YouTubePublisher {
     };
 
     if (input.publishAt) {
-      requestBody.status!.publishAt = input.publishAt;
+      const scheduleDate = new Date(input.publishAt);
+      if (!isNaN(scheduleDate.getTime()) && scheduleDate.getTime() > Date.now()) {
+        requestBody.status!.publishAt = scheduleDate.toISOString();
+        requestBody.status!.privacyStatus = 'private'; // Required by YouTube API when publishAt is set
+      }
     }
 
-    // Prepare read stream
+    let quotaCost = 1600; // Standard YouTube Data API v3 upload cost
+
+    // Resumable upload via stream
     const mediaStream = fs.createReadStream(input.videoFilePath);
 
-    let uploadedBytes = 0;
-    if (input.onProgress) {
-      mediaStream.on('data', (chunk) => {
-        uploadedBytes += chunk.length;
-        const pct = Math.min(100, Math.round((uploadedBytes / totalBytes) * 100));
-        input.onProgress!(pct, uploadedBytes, totalBytes);
-      });
-    }
-
-    // 1. Upload Video
-    const insertRes = await this.youtube.videos.insert(
-      {
-        part: ['snippet', 'status'],
-        requestBody,
-        media: {
-          body: mediaStream,
-        },
+    const insertRes = await this.youtube.videos.insert({
+      part: ['snippet', 'status'],
+      requestBody,
+      media: {
+        body: mediaStream,
       },
-      {
-        // Resumable upload configurations
-        retry: true,
-        retryConfig: {
-          retry: 3,
-          retryDelay: 1500,
-        },
-      }
-    );
+    });
 
     const videoId = insertRes.data.id;
     if (!videoId) {
-      throw new Error('YouTube API returned successful response but videoId is missing.');
+      throw new Error('YouTube API did not return a valid video ID after upload.');
     }
 
-    // 2. Upload Thumbnail if supplied
+    // Upload custom thumbnail if provided
     let thumbnailUploaded = false;
     if (input.thumbnailFilePath) {
       try {
+        if (!fs.existsSync(input.thumbnailFilePath)) {
+          throw new Error(`Thumbnail file not found at: ${input.thumbnailFilePath}`);
+        }
         await this.youtube.thumbnails.set({
           videoId,
           media: {
@@ -156,8 +116,12 @@ export class YouTubePublisher {
           },
         });
         thumbnailUploaded = true;
+        quotaCost += 50;
       } catch (thumbErr: any) {
-        console.warn(`[YouTubePublisher] Warning: Failed to set thumbnail for ${videoId}: ${thumbErr.message}`);
+        if (input.requireThumbnail) {
+          throw new Error(`Required thumbnail upload failed: ${thumbErr.message}`);
+        }
+        console.warn(`[YouTubePublisher] Warning: Optional thumbnail failed for ${videoId}: ${thumbErr.message}`);
       }
     }
 
@@ -281,9 +245,17 @@ export class YouTubePublisher {
   }
 
   /**
-   * Reads back the live status of a video from YouTube to verify postconditions.
+   * Reads back live status from YouTube and verifies postconditions against expected plan.
    */
-  public async verifyVideo(videoId: string): Promise<{
+  public async verifyVideo(
+    videoId: string,
+    expected?: {
+      channelId?: string;
+      title?: string;
+      privacyStatus?: string;
+      publishAt?: string;
+    }
+  ): Promise<{
     exists: boolean;
     videoId: string;
     title: string;
@@ -306,14 +278,31 @@ export class YouTubePublisher {
       throw new Error(`Verification failed: Video ID '${videoId}' was not found on YouTube.`);
     }
 
+    const liveChannelId = item.snippet?.channelId || '';
+    const liveTitle = item.snippet?.title || '';
+    const livePrivacy = item.status?.privacyStatus || '';
+    const livePublishAt = item.status?.publishAt || undefined;
+
+    if (expected?.channelId && liveChannelId !== expected.channelId) {
+      throw new Error(`Verification failed: Channel ID mismatch. Expected '${expected.channelId}', found '${liveChannelId}'`);
+    }
+
+    if (expected?.privacyStatus && livePrivacy !== expected.privacyStatus) {
+      throw new Error(`Verification failed: Privacy status mismatch. Expected '${expected.privacyStatus}', found '${livePrivacy}'`);
+    }
+
+    if (expected?.publishAt && livePublishAt !== expected.publishAt) {
+      throw new Error(`Verification failed: Publication schedule mismatch. Expected '${expected.publishAt}', found '${livePublishAt}'`);
+    }
+
     return {
       exists: true,
       videoId,
-      title: item.snippet?.title || '',
+      title: liveTitle,
       uploadStatus: item.status?.uploadStatus || 'unknown',
-      privacyStatus: item.status?.privacyStatus || 'unknown',
-      publishAt: item.status?.publishAt || undefined,
-      channelId: item.snippet?.channelId || '',
+      privacyStatus: livePrivacy,
+      publishAt: livePublishAt,
+      channelId: liveChannelId,
     };
   }
 }

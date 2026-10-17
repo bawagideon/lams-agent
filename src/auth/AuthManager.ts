@@ -1,12 +1,17 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { config } from '../config/env.ts';
+
+export type UserRole = 'creator' | 'admin' | 'viewer';
 
 export interface AuthSession {
   userId: string;
-  role: 'creator' | 'admin' | 'viewer';
+  role: UserRole;
   issuedAt: number;
   expiresAt: number;
+  csrfToken: string;
 }
 
 export class AuthManager {
@@ -15,13 +20,22 @@ export class AuthManager {
   private sessionTtlMs: number = 7 * 24 * 60 * 60 * 1000; // 7 days
 
   private constructor() {
-    // Priority: configured secret > creator API key > runtime secure fallback
-    const envSecret = process.env.LAMS_AUTH_SECRET || process.env.CREATOR_API_KEY;
-    if (envSecret && envSecret.trim().length >= 16) {
-      this.secretKey = envSecret.trim();
+    const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+    const configuredSecret = process.env.LAMS_AUTH_SECRET || process.env.CREATOR_API_KEY;
+
+    if (configuredSecret && configuredSecret.trim().length >= 32) {
+      this.secretKey = configuredSecret.trim();
+    } else if (isProduction) {
+      // In production, strictly fail closed if strong secrets are missing
+      throw new Error(
+        'FATAL: Production startup halted. LAMS_AUTH_SECRET or CREATOR_API_KEY environment variable is missing or insecure (<32 chars).'
+      );
     } else {
-      this.secretKey = crypto.randomBytes(32).toString('hex');
-      console.warn('[AuthManager] No strong LAMS_AUTH_SECRET configured in environment. Using generated runtime secret.');
+      // In development, persist an ephemeral key locally so server restarts within dev do not invalidate sessions
+      this.secretKey = this.getOrGenerateDevSecret();
+      console.warn(
+        '[AuthManager] DEVELOPMENT MODE: No strong LAMS_AUTH_SECRET set. Using persisted local dev secret.'
+      );
     }
   }
 
@@ -32,21 +46,41 @@ export class AuthManager {
     return AuthManager.instance;
   }
 
+  private getOrGenerateDevSecret(): string {
+    const devSecretFile = path.resolve('data', '.dev_auth_secret');
+    try {
+      if (fs.existsSync(devSecretFile)) {
+        const stored = fs.readFileSync(devSecretFile, 'utf-8').trim();
+        if (stored.length >= 32) return stored;
+      }
+    } catch {}
+
+    const generated = crypto.randomBytes(32).toString('hex');
+    try {
+      const dataDir = path.dirname(devSecretFile);
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(devSecretFile, generated, { encoding: 'utf-8', mode: 0o600 });
+    } catch {}
+    return generated;
+  }
+
   public getSecret(): string {
     return this.secretKey;
   }
 
   /**
-   * Generates a tamper-proof signed session string:
+   * Generates a tamper-proof signed session string with embedded CSRF token:
    * base64(payload).signature
    */
-  public createSessionToken(userId: string = 'lams-creator', role: 'creator' | 'admin' = 'creator'): string {
+  public createSessionToken(userId: string = 'lams-creator', role: UserRole = 'creator'): { sessionToken: string; csrfToken: string } {
     const now = Date.now();
+    const csrfToken = crypto.randomBytes(24).toString('hex');
     const session: AuthSession = {
       userId,
       role,
       issuedAt: now,
       expiresAt: now + this.sessionTtlMs,
+      csrfToken,
     };
 
     const payload = Buffer.from(JSON.stringify(session)).toString('base64url');
@@ -55,7 +89,10 @@ export class AuthManager {
       .update(payload)
       .digest('base64url');
 
-    return `${payload}.${signature}`;
+    return {
+      sessionToken: `${payload}.${signature}`,
+      csrfToken,
+    };
   }
 
   /**
@@ -91,55 +128,60 @@ export class AuthManager {
   }
 
   /**
-   * Validates a login attempt using a creator password or API key.
+   * Validates a login attempt using creator password or API key.
+   * NO hardcoded fallback credentials permitted.
    */
   public verifyLogin(credential: string): boolean {
     if (!credential || typeof credential !== 'string') return false;
 
-    // Check against configured auth secret, creator key, or fallback
-    const expected = process.env.LAMS_AUTH_SECRET || process.env.CREATOR_API_KEY || 'lams-creator-hq-2026';
-    if (credential.length !== expected.length) return false;
+    const expected = process.env.LAMS_AUTH_SECRET || process.env.CREATOR_API_KEY;
+    if (!expected) {
+      // If no secret configured (only possible in dev mode), compare with dev secret
+      return crypto.timingSafeEqual(Buffer.from(credential), Buffer.from(this.secretKey));
+    }
 
-    return crypto.timingSafeEqual(
-      Buffer.from(credential),
-      Buffer.from(expected)
-    );
+    if (credential.length !== expected.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(credential), Buffer.from(expected));
   }
 
   /**
-   * Extracts credentials from request:
+   * Extracts and verifies credentials from request:
    * 1. Authorization: Bearer <token>
    * 2. Cookie: lams_session=<token>
-   * 3. Query: ?token=<token>
+   * (Strictly disallows query-string token authentication to prevent URL leakage).
    */
   public authenticateRequest(req: http.IncomingMessage): {
     authenticated: boolean;
     session?: AuthSession;
+    authMethod?: 'bearer' | 'cookie';
     error?: string;
   } {
-    // 1. Check Bearer token
+    // 1. Check Bearer token header
     const authHeader = req.headers['authorization'];
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7).trim();
       const session = this.verifySessionToken(token);
       if (session) {
-        return { authenticated: true, session };
+        return { authenticated: true, session, authMethod: 'bearer' };
       }
-      // Or check if direct API key was passed
+      // Check if direct API key was passed as Bearer token
       if (this.verifyLogin(token)) {
         return {
           authenticated: true,
+          authMethod: 'bearer',
           session: {
-            userId: 'api-client',
+            userId: 'api-service',
             role: 'creator',
             issuedAt: Date.now(),
             expiresAt: Date.now() + 3600000,
+            csrfToken: 'api-bearer-exempt',
           },
         };
       }
+      return { authenticated: false, error: 'Invalid or expired Bearer token' };
     }
 
-    // 2. Check cookie
+    // 2. Check Cookie
     const cookieHeader = req.headers['cookie'];
     if (cookieHeader) {
       const cookies = cookieHeader.split(';').map(c => c.trim());
@@ -148,29 +190,38 @@ export class AuthManager {
         const token = sessionCookie.split('=')[1];
         const session = this.verifySessionToken(token);
         if (session) {
-          return { authenticated: true, session };
-        }
-      }
-    }
+          // For state-changing methods authenticated via cookie, check CSRF token
+          const method = req.method || 'GET';
+          const isMutating = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase());
+          if (isMutating) {
+            const csrfHeader = req.headers['x-csrf-token'] as string;
+            const secFetchSite = (req.headers['sec-fetch-site'] as string || '').toLowerCase();
+            const isSameOrigin = secFetchSite === 'same-origin' || secFetchSite === 'same-site';
 
-    // 3. Check query param for media player / exports
-    try {
-      const parsedUrl = new URL(req.url || '/', 'http://localhost');
-      const queryToken = parsedUrl.searchParams.get('token');
-      if (queryToken) {
-        const session = this.verifySessionToken(queryToken);
-        if (session) {
-          return { authenticated: true, session };
+            if (!isSameOrigin && (!csrfHeader || csrfHeader !== session.csrfToken)) {
+              return { authenticated: false, error: 'CSRF validation failed for cookie session' };
+            }
+          }
+
+          return { authenticated: true, session, authMethod: 'cookie' };
         }
       }
-    } catch {
-      // URL parsing failed
     }
 
     return {
       authenticated: false,
-      error: 'Authentication required. Please provide a valid Bearer token or log in.',
+      error: 'Authentication required. Provide Authorization: Bearer <token> or valid session cookie.',
     };
+  }
+
+  /**
+   * Enforces role-based authorization.
+   */
+  public hasPermission(session: AuthSession, action: 'read' | 'approve' | 'release' | 'admin'): boolean {
+    if (session.role === 'admin') return true;
+    if (session.role === 'creator') return action !== 'admin';
+    if (session.role === 'viewer') return action === 'read';
+    return false;
   }
 
   /**

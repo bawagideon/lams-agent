@@ -134,17 +134,20 @@ async function runTests() {
 
   // 10. Security: AuthManager creates and verifies signed session cookies
   let authCookie = '';
+  let authCsrfToken = '';
   await test('AuthManager: /api/auth/login authenticates with creator key and sets cookie', async () => {
     const res = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'lams-creator-hq-2026' }),
+      body: JSON.stringify({ password: AuthManager.getInstance().getSecret() }),
     });
     assert.strictEqual(res.status, 200, `Expected 200, got ${res.status}`);
     const setCookie = res.headers.get('set-cookie');
     assert(setCookie && setCookie.includes('lams_session='), 'Expected lams_session Set-Cookie header');
     assert(setCookie.includes('HttpOnly'), 'Cookie must be HttpOnly');
     authCookie = setCookie.split(';')[0];
+    const data = await res.json();
+    authCsrfToken = data.csrfToken || '';
   });
 
   // 11. Security: Two-Phase Cryptographic Approval (Rejection of unapproved releases)
@@ -155,6 +158,7 @@ async function runTests() {
       headers: {
         'Content-Type': 'application/json',
         Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
       },
       body: JSON.stringify({ isApprovedByHuman: true }), // Old mock flag must be ignored
     });
@@ -179,28 +183,28 @@ async function runTests() {
     fs.writeFileSync(dummyVideo, Buffer.alloc(2048, 0x42));
 
     try {
-      const { proposal, approvalToken } = approvalManager.createReleaseProposal({
+      const { proposal, approvalToken } = await approvalManager.createReleaseProposal({
         episodeId: 'test-ep-001',
         title: 'Test Episode',
         videoFilePath: dummyVideo,
-        channelTitle: 'Test Channel',
+        destinationChannelId: 'test-channel',
       });
 
       assert(approvalToken, 'Expected approvalToken');
       assert.strictEqual(proposal.status, 'PENDING');
 
       // Test valid validation & consumption
-      const consumeResult = approvalManager.validateAndConsumeApproval(approvalToken, 'test-ep-001', dummyVideo);
+      const consumeResult = await approvalManager.validateAndConsumeApproval(approvalToken, 'test-ep-001', dummyVideo);
       assert.strictEqual(consumeResult.valid, true, `Expected valid approval, got error: ${consumeResult.error}`);
 
       // Test replay attack rejection (consuming twice)
-      const replayResult = approvalManager.validateAndConsumeApproval(approvalToken, 'test-ep-001', dummyVideo);
+      const replayResult = await approvalManager.validateAndConsumeApproval(approvalToken, 'test-ep-001', dummyVideo);
       assert.strictEqual(replayResult.valid, false, 'Replay attack must be rejected');
       assert(replayResult.error?.includes('consumed') || replayResult.error?.includes('replay'), 'Must state consumed');
 
       // Test forged signature rejection
       const forgedToken = approvalToken.slice(0, -6) + 'abcdef';
-      const forgedResult = approvalManager.validateAndConsumeApproval(forgedToken, 'test-ep-001', dummyVideo);
+      const forgedResult = await approvalManager.validateAndConsumeApproval(forgedToken, 'test-ep-001', dummyVideo);
       assert.strictEqual(forgedResult.valid, false, 'Forged token must be rejected');
     } finally {
       if (fs.existsSync(dummyVideo)) fs.unlinkSync(dummyVideo);

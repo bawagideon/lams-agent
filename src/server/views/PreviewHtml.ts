@@ -82,13 +82,13 @@ export function renderPreviewHtml(
 
     <!-- Actions Header -->
     <div class="flex items-center gap-3">
-      <button onclick="triggerCapCutDraft('${escapeHtml(episode.id)}')" id="btnCapCutTop" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+      <button id="btnCapCutTop" data-episode-id="${escapeHtml(episode.id)}" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
         ✂️ Open in CapCut
       </button>
-      <button onclick="triggerFfmpegRender('${escapeHtml(episode.id)}')" id="btnRenderTop" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+      <button id="btnRenderTop" data-episode-id="${escapeHtml(episode.id)}" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
         ⚡ Render Video
       </button>
-      <button onclick="openReleaseRoom('${escapeHtml(episode.id)}')" id="btnApproveTop" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition">
+      <button id="btnApproveTop" data-episode-id="${escapeHtml(episode.id)}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition">
         <span>Go to release</span>
       </button>
     </div>
@@ -149,8 +149,12 @@ export function renderPreviewHtml(
           ${episode.scenes.map((sc, idx) => `
             <div 
               id="scene-card-${escapeHtml(sc.id)}"
-              onclick="playScene('${encodeURIComponent(sc.videoUrl || '')}', '${sc.sceneNumber}', '${encodeURIComponent(sc.title)}', '${escapeHtml(sc.id)}', '${encodeURIComponent(sc.visualPrompt || '')}')"
-              class="p-4 bg-gray-50/80 border border-gray-200 hover:border-indigo-300 rounded-2xl cursor-pointer transition flex items-start gap-4 group card-hover ${idx === 0 && !exportedVideo ? 'active-scene-card' : ''}"
+              data-video-url="${escapeHtml(sc.videoUrl || '')}"
+              data-scene-number="${sc.sceneNumber}"
+              data-title="${escapeHtml(sc.title)}"
+              data-scene-id="${escapeHtml(sc.id)}"
+              data-prompt="${escapeHtml(sc.visualPrompt || '')}"
+              class="scene-card-item p-4 bg-gray-50/80 border border-gray-200 hover:border-indigo-300 rounded-2xl cursor-pointer transition flex items-start gap-4 group card-hover ${idx === 0 && !exportedVideo ? 'active-scene-card' : ''}"
             >
               <div class="flex-shrink-0 w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-[#4338ca] group-hover:bg-[#4338ca] group-hover:text-white transition shadow-sm">
                 #${sc.sceneNumber}
@@ -216,14 +220,14 @@ export function renderPreviewHtml(
           <div class="p-3.5 bg-emerald-50/60 border border-emerald-100 rounded-2xl space-y-2 text-xs">
             <div class="font-bold text-emerald-950 truncate">${escapeHtml(exportedVideo.fileName)}</div>
             <div class="text-[11px] text-emerald-800">${exportedVideo.sizeMb} MB • Modified ${new Date(exportedVideo.modifiedAt).toLocaleTimeString()}</div>
-            <button onclick="playMasterVideo('/api/exports/${encodeURIComponent(exportedVideo.fileName)}', '${encodeURIComponent(exportedVideo.fileName)}')" class="mt-1 w-full text-center bg-white hover:bg-emerald-50 text-emerald-800 font-semibold py-1.5 rounded-xl border border-emerald-200 transition">
+            <button id="btnPlayMaster" data-url="/api/exports/${encodeURIComponent(exportedVideo.fileName)}" data-filename="${escapeHtml(exportedVideo.fileName)}" class="mt-1 w-full text-center bg-white hover:bg-emerald-50 text-emerald-800 font-semibold py-1.5 rounded-xl border border-emerald-200 transition">
               ▶ Load Master in Player
             </button>
           </div>
         ` : `
           <div class="p-4 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-center text-xs text-gray-500 space-y-2">
             <p>No master export detected yet. After editing in CapCut, export to the <code class="text-indigo-600 font-mono">watched_exports</code> folder or click below to render via FFmpeg.</p>
-            <button onclick="triggerFfmpegRender('${escapeHtml(episode.id)}')" class="bg-white hover:bg-gray-100 text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-200 transition shadow-sm">
+            <button id="btnFfmpegFallback" data-episode-id="${escapeHtml(episode.id)}" class="bg-white hover:bg-gray-100 text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-200 transition shadow-sm">
               Render Video with FFmpeg
             </button>
           </div>
@@ -259,7 +263,7 @@ export function renderPreviewHtml(
           <span class="text-[11px] font-bold text-indigo-600 tracking-wide uppercase">Safe Mode Release Room</span>
           <h3 class="text-lg font-black text-gray-900">Confirm YouTube Release</h3>
         </div>
-        <button onclick="closeReleaseRoom()" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
+        <button data-action="close-release" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
       </div>
 
       <p class="text-xs text-gray-500 leading-relaxed">
@@ -276,10 +280,10 @@ export function renderPreviewHtml(
 
       <!-- Modal Action Buttons -->
       <div class="flex items-center justify-end gap-3 pt-2">
-        <button onclick="closeReleaseRoom()" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+        <button data-action="close-release" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
-        <button id="btnConfirmRelease" onclick="confirmAndPublish()" disabled class="bg-[#4338ca] hover:bg-[#3730a3] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-sm transition">
+        <button id="btnConfirmRelease" disabled class="bg-[#4338ca] hover:bg-[#3730a3] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-sm transition">
           Publish as Private Release
         </button>
       </div>
@@ -291,11 +295,7 @@ export function renderPreviewHtml(
     const episodeId = '${escapeHtml(episode.id)}';
     let currentApprovalToken = null;
 
-    function playScene(urlEncoded, sceneNum, titleEncoded, sceneId, promptEncoded) {
-      const url = decodeURIComponent(urlEncoded);
-      const title = decodeURIComponent(titleEncoded);
-      const prompt = decodeURIComponent(promptEncoded);
-
+    function playScene(url, sceneNum, title, sceneId, prompt) {
       const player = document.getElementById('mainVideoPlayer');
       const label = document.getElementById('playerCurrentLabel');
       const promptBadge = document.getElementById('activeScenePromptBadge');
@@ -323,15 +323,14 @@ export function renderPreviewHtml(
         promptText.innerText = prompt || 'No prompt recorded for this scene.';
       }
 
-      document.querySelectorAll('[id^="scene-card-"]').forEach(el => {
+      document.querySelectorAll('.scene-card-item').forEach(el => {
         el.classList.remove('active-scene-card');
       });
       const card = document.getElementById('scene-card-' + sceneId);
       if (card) card.classList.add('active-scene-card');
     }
 
-    function playMasterVideo(url, fileNameEncoded) {
-      const fileName = decodeURIComponent(fileNameEncoded);
+    function playMasterVideo(url, fileName) {
       const player = document.getElementById('mainVideoPlayer');
       const label = document.getElementById('playerCurrentLabel');
 
@@ -343,32 +342,38 @@ export function renderPreviewHtml(
         label.innerText = 'Master Export: ' + fileName;
       }
 
-      document.querySelectorAll('[id^="scene-card-"]').forEach(el => {
+      document.querySelectorAll('.scene-card-item').forEach(el => {
         el.classList.remove('active-scene-card');
       });
     }
 
     async function triggerCapCutDraft(id) {
       const btn = document.getElementById('btnCapCutTop');
-      btn.innerText = 'Assembling CapCut...';
-      btn.disabled = true;
+      if (btn) {
+        btn.innerText = 'Assembling CapCut...';
+        btn.disabled = true;
+      }
       try {
         const res = await fetch('/api/episodes/' + id + '/capcut', { method: 'POST' });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        alert('✓ CapCut Draft Created!\\nLocation: ' + data.draftPath + '\\nOpen CapCut Desktop to see your timeline.');
+        alert('✓ CapCut Draft Created!\\nLocation: ' + (data.draftPath || 'Queued') + '\\nOpen CapCut Desktop to see your timeline.');
       } catch (err) {
         alert('Error: ' + err.message);
       } finally {
-        btn.innerText = '✂️ Open in CapCut';
-        btn.disabled = false;
+        if (btn) {
+          btn.innerText = '✂️ Open in CapCut';
+          btn.disabled = false;
+        }
       }
     }
 
     async function triggerFfmpegRender(id) {
       const btn = document.getElementById('btnRenderTop');
-      btn.innerText = 'Rendering Video...';
-      btn.disabled = true;
+      if (btn) {
+        btn.innerText = 'Rendering Video...';
+        btn.disabled = true;
+      }
       try {
         const res = await fetch('/api/episodes/' + id + '/render', { method: 'POST' });
         const data = await res.json();
@@ -378,8 +383,10 @@ export function renderPreviewHtml(
       } catch (err) {
         alert('Render Error: ' + err.message);
       } finally {
-        btn.innerText = '⚡ Render Video';
-        btn.disabled = false;
+        if (btn) {
+          btn.innerText = '⚡ Render Video';
+          btn.disabled = false;
+        }
       }
     }
 
@@ -469,7 +476,7 @@ export function renderPreviewHtml(
         if (data.error) throw new Error(data.error);
 
         msg.className = 'bg-emerald-50 text-emerald-900 border border-emerald-200 p-3 rounded-xl text-xs space-y-1';
-        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to Scheduled in Supabase.';
+        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to ' + (data.newStatus || 'Scheduled') + ' in Supabase.';
         msg.classList.remove('hidden');
 
         btn.innerText = 'Release Published';
@@ -485,6 +492,37 @@ export function renderPreviewHtml(
         btn.innerText = 'Publish as Private Release';
       }
     }
+
+    // Attach all event listeners to DOM without inline strings
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('btnCapCutTop')?.addEventListener('click', () => triggerCapCutDraft(episodeId));
+      document.getElementById('btnRenderTop')?.addEventListener('click', () => triggerFfmpegRender(episodeId));
+      document.getElementById('btnApproveTop')?.addEventListener('click', () => openReleaseRoom(episodeId));
+      document.getElementById('btnFfmpegFallback')?.addEventListener('click', () => triggerFfmpegRender(episodeId));
+
+      document.getElementById('btnPlayMaster')?.addEventListener('click', (e) => {
+        const target = e.currentTarget;
+        playMasterVideo(target.getAttribute('data-url'), target.getAttribute('data-filename'));
+      });
+
+      document.querySelectorAll('[data-action="close-release"]').forEach(el => {
+        el.addEventListener('click', closeReleaseRoom);
+      });
+
+      document.getElementById('btnConfirmRelease')?.addEventListener('click', confirmAndPublish);
+
+      document.addEventListener('click', (e) => {
+        const card = e.target.closest('.scene-card-item');
+        if (card) {
+          const url = card.getAttribute('data-video-url');
+          const sceneNum = card.getAttribute('data-scene-number');
+          const title = card.getAttribute('data-title');
+          const sceneId = card.getAttribute('data-scene-id');
+          const prompt = card.getAttribute('data-prompt');
+          playScene(url, sceneNum, title, sceneId, prompt);
+        }
+      });
+    });
   </script>
 </body>
 </html>

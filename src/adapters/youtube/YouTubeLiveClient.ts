@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import crypto from 'node:crypto';
 import { google, youtube_v3 } from 'googleapis';
 import { config } from '../../config/env.ts';
@@ -21,28 +23,67 @@ export class YouTubeLiveClient {
   private clientSecret: string;
   private defaultRedirectUri: string;
   private credentialStore: CredentialStore;
-  private static oauthStates: Map<string, { createdAt: number; expiresAt: number }> = new Map();
+  private statesFilePath: string;
 
   constructor(defaultRedirectUri = 'http://localhost:4200/oauth2callback') {
     this.clientId = config.GOOGLE_CLIENT_ID;
     this.clientSecret = config.GOOGLE_CLIENT_SECRET;
     this.defaultRedirectUri = defaultRedirectUri;
     this.credentialStore = CredentialStore.getInstance();
+    
+    const dataDir = path.resolve('data');
+    if (!fs.existsSync(dataDir)) {
+      try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+    }
+    this.statesFilePath = path.join(dataDir, 'oauth_states.json');
   }
 
-  private cleanExpiredStates(): void {
-    const now = Date.now();
-    for (const [state, meta] of YouTubeLiveClient.oauthStates.entries()) {
-      if (now > meta.expiresAt) {
-        YouTubeLiveClient.oauthStates.delete(state);
+  private loadStates(): Map<string, { createdAt: number; expiresAt: number }> {
+    const map = new Map<string, { createdAt: number; expiresAt: number }>();
+    try {
+      if (fs.existsSync(this.statesFilePath)) {
+        const raw = fs.readFileSync(this.statesFilePath, 'utf-8');
+        const items: Array<{ state: string; createdAt: number; expiresAt: number }> = JSON.parse(raw);
+        const now = Date.now();
+        items.forEach(it => {
+          if (now <= it.expiresAt) map.set(it.state, { createdAt: it.createdAt, expiresAt: it.expiresAt });
+        });
       }
-    }
+    } catch {}
+    return map;
+  }
+
+  private saveStates(states: Map<string, { createdAt: number; expiresAt: number }>): void {
+    try {
+      const array = Array.from(states.entries()).map(([state, meta]) => ({ state, ...meta }));
+      fs.writeFileSync(this.statesFilePath, JSON.stringify(array, null, 2), 'utf-8');
+    } catch {}
+  }
+
+  /**
+   * Validates redirect URI against trusted origin whitelist.
+   */
+  public sanitizeRedirectUri(uri?: string): string {
+    if (!uri) return this.defaultRedirectUri;
+    try {
+      const parsed = new URL(uri);
+      const host = parsed.hostname.toLowerCase();
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+      const isVercel = host.endsWith('.vercel.app');
+      const isConfiguredBase = config.BASE_URL ? new URL(config.BASE_URL).hostname.toLowerCase() === host : false;
+
+      if (isLocalhost || isVercel || isConfiguredBase) {
+        return uri;
+      }
+    } catch {}
+
+    return this.defaultRedirectUri;
   }
 
   public getAuthUrl(customRedirectUri?: string): string {
-    this.cleanExpiredStates();
+    const states = this.loadStates();
+    const redirectUri = this.sanitizeRedirectUri(customRedirectUri);
 
-    const redirectUri = customRedirectUri || this.defaultRedirectUri;
     const oauth2Client = new google.auth.OAuth2(
       this.clientId,
       this.clientSecret,
@@ -59,10 +100,11 @@ export class YouTubeLiveClient {
     // Cryptographic CSRF state token
     const state = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    YouTubeLiveClient.oauthStates.set(state, {
+    states.set(state, {
       createdAt: now,
       expiresAt: now + 10 * 60 * 1000, // 10 minutes TTL
     });
+    this.saveStates(states);
 
     return oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -81,27 +123,29 @@ export class YouTubeLiveClient {
     state?: string | null,
     customRedirectUri?: string
   ): Promise<{ channelTitle: string; channelId: string; refreshToken: string }> {
-    this.cleanExpiredStates();
+    const states = this.loadStates();
 
     // 1. CSRF State Verification
     if (!state) {
       throw new Error('OAuth Security Rejection: Missing state parameter. Potential CSRF attack.');
     }
 
-    const stateMeta = YouTubeLiveClient.oauthStates.get(state);
+    const stateMeta = states.get(state);
     if (!stateMeta) {
       throw new Error('OAuth Security Rejection: Invalid or expired state token. Please initiate a new login.');
     }
 
     if (Date.now() > stateMeta.expiresAt) {
-      YouTubeLiveClient.oauthStates.delete(state);
+      states.delete(state);
+      this.saveStates(states);
       throw new Error('OAuth Security Rejection: State token expired. Please retry.');
     }
 
-    // Consume state immediately
-    YouTubeLiveClient.oauthStates.delete(state);
+    // Atomically consume state
+    states.delete(state);
+    this.saveStates(states);
 
-    const redirectUri = customRedirectUri || this.defaultRedirectUri;
+    const redirectUri = this.sanitizeRedirectUri(customRedirectUri);
     const oauth2Client = new google.auth.OAuth2(
       this.clientId,
       this.clientSecret,
@@ -136,7 +180,8 @@ export class YouTubeLiveClient {
    * Queries real channel status from YouTube Data API v3
    */
   public async getChannelStatus(customRedirectUri?: string): Promise<ChannelProfile> {
-    const authUrl = this.getAuthUrl(customRedirectUri);
+    const redirectUri = this.sanitizeRedirectUri(customRedirectUri);
+    const authUrl = this.getAuthUrl(redirectUri);
     const refreshToken = this.credentialStore.getYouTubeRefreshToken();
 
     if (!refreshToken) {
@@ -148,7 +193,6 @@ export class YouTubeLiveClient {
     }
 
     try {
-      const redirectUri = customRedirectUri || this.defaultRedirectUri;
       const oauth2Client = new google.auth.OAuth2(
         this.clientId,
         this.clientSecret,

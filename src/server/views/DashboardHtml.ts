@@ -106,14 +106,14 @@ export function renderDashboardHtml(
 
       <!-- Navigation Menu -->
       <nav class="px-3 space-y-1">
-        <button onclick="switchTab('home')" id="nav-home" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'home' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+        <button data-tab="home" id="nav-home" class="nav-tab-btn w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'home' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <svg class="w-5 h-5 ${initialTab === 'home' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
           </svg>
           <span>Home</span>
         </button>
 
-        <button onclick="switchTab('episodes')" id="nav-episodes" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'episodes' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+        <button data-tab="episodes" id="nav-episodes" class="nav-tab-btn w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'episodes' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <div class="flex items-center gap-3">
             <svg class="w-5 h-5 ${initialTab === 'episodes' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
@@ -123,7 +123,7 @@ export function renderDashboardHtml(
           <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">${episodes.length}</span>
         </button>
 
-        <button onclick="switchTab('skills')" id="nav-skills" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'skills' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+        <button data-tab="skills" id="nav-skills" class="nav-tab-btn w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'skills' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <div class="flex items-center gap-3">
             <svg class="w-5 h-5 ${initialTab === 'skills' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
@@ -133,14 +133,14 @@ export function renderDashboardHtml(
           <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">${skills.length}</span>
         </button>
 
-        <button onclick="switchTab('activity')" id="nav-activity" class="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'activity' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+        <button data-tab="activity" id="nav-activity" class="nav-tab-btn w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'activity' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <svg class="w-5 h-5 ${initialTab === 'activity' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
           </svg>
           <span>Activity</span>
         </button>
 
-        <button onclick="switchTab('connections')" id="nav-connections" class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'connections' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
+        <button data-tab="connections" id="nav-connections" class="nav-tab-btn w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition ${initialTab === 'connections' ? 'bg-[#ede9fe] text-[#4338ca] font-semibold' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 font-medium'}">
           <div class="flex items-center gap-3">
             <svg class="w-5 h-5 ${initialTab === 'connections' ? 'text-[#4338ca]' : 'text-gray-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
@@ -227,10 +227,10 @@ export function renderDashboardHtml(
               <a href="/episodes/${currentEpisode.id}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
                 <span>Watch the scenes</span>
               </a>
-              <button onclick="assembleCapCutDraft('${currentEpisode.id}')" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
+              <button id="btnHeroCapCut" data-action="assemble-capcut" data-episode-id="${escapeHtml(currentEpisode.id)}" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
                 Open in CapCut
               </button>
-              <button onclick="openReleaseRoom('${currentEpisode.id}')" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
+              <button id="btnHeroRelease" data-action="open-release" data-episode-id="${escapeHtml(currentEpisode.id)}" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
                 Go to release
               </button>
             </div>
@@ -242,7 +242,7 @@ export function renderDashboardHtml(
       <section class="space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-bold text-gray-900">Your episodes</h2>
-          <button onclick="switchTab('episodes')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
+          <button data-tab="episodes" class="nav-tab-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
             See all ${episodes.length}
           </button>
         </div>
@@ -278,14 +278,14 @@ export function renderDashboardHtml(
       <section class="space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-bold text-gray-900">What I can do for you</h2>
-          <button onclick="switchTab('skills')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
+          <button data-tab="skills" class="nav-tab-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
             All skills
           </button>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <!-- Card 1 -->
-          <div onclick="sendQuickPrompt('Produce an episode for ' + '${currentEpisode.title}')" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+          <div data-action="quick-prompt" data-prompt="Produce an episode for ${escapeHtml(currentEpisode.title)}" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
             <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
               1
             </div>
@@ -296,7 +296,7 @@ export function renderDashboardHtml(
           </div>
 
           <!-- Card 2 -->
-          <div onclick="assembleCapCutDraft('${currentEpisode.id}')" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+          <div data-action="assemble-capcut" data-episode-id="${escapeHtml(currentEpisode.id)}" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
             <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
               2
             </div>
@@ -307,7 +307,7 @@ export function renderDashboardHtml(
           </div>
 
           <!-- Card 3 -->
-          <div onclick="openReleaseRoom('${currentEpisode.id}')" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+          <div data-action="open-release" data-episode-id="${escapeHtml(currentEpisode.id)}" class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
             <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
               3
             </div>
@@ -318,7 +318,7 @@ export function renderDashboardHtml(
           </div>
 
           <!-- Card 4 (Teach me a new task - dashed border) -->
-          <div onclick="openTeachModal()" class="bg-white border border-dashed border-indigo-200 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
+          <div data-action="open-teach" class="bg-white border border-dashed border-indigo-200 rounded-2xl p-5 shadow-sm card-hover cursor-pointer space-y-3">
             <div class="w-8 h-8 rounded-xl bg-[#ede9fe] text-[#4338ca] font-bold flex items-center justify-center text-sm">
               +
             </div>
@@ -391,7 +391,6 @@ export function renderDashboardHtml(
               type="text" 
               id="episodeSearchInput" 
               placeholder="Search episodes..." 
-              oninput="filterEpisodesBySearch(this.value)" 
               class="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-500 shadow-sm"
             />
             <svg class="w-4 h-4 text-gray-400 absolute left-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -400,10 +399,10 @@ export function renderDashboardHtml(
           </div>
 
           <div class="flex items-center gap-1.5 text-xs">
-            <button onclick="filterEpisodes('all')" id="filter-btn-all" class="bg-[#4338ca] text-white px-3 py-1.5 rounded-lg font-medium transition shadow-sm">All (${episodes.length})</button>
-            <button onclick="filterEpisodes('Review')" id="filter-btn-review" class="bg-amber-100 text-amber-900 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-medium transition">Needs Review (${metrics.Review || 0})</button>
-            <button onclick="filterEpisodes('Draft')" id="filter-btn-draft" class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-medium transition">Draft (${metrics.Draft || 0})</button>
-            <button onclick="filterEpisodes('Scheduled')" id="filter-btn-scheduled" class="bg-emerald-100 text-emerald-900 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition">Scheduled (${metrics.Scheduled || 0})</button>
+            <button data-filter="all" id="filter-btn-all" class="filter-ep-btn bg-[#4338ca] text-white px-3 py-1.5 rounded-lg font-medium transition shadow-sm">All (${episodes.length})</button>
+            <button data-filter="Review" id="filter-btn-review" class="filter-ep-btn bg-amber-100 text-amber-900 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-medium transition">Needs Review (${metrics.Review || 0})</button>
+            <button data-filter="Draft" id="filter-btn-draft" class="filter-ep-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-medium transition">Draft (${metrics.Draft || 0})</button>
+            <button data-filter="Scheduled" id="filter-btn-scheduled" class="filter-ep-btn bg-emerald-100 text-emerald-900 hover:bg-emerald-200 px-3 py-1.5 rounded-lg font-medium transition">Scheduled (${metrics.Scheduled || 0})</button>
           </div>
         </div>
       </div>
@@ -419,17 +418,17 @@ export function renderDashboardHtml(
           >
             <div>
               <div class="flex items-center justify-between">
-                <span class="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">${ep.projectName}</span>
+                <span class="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold">${escapeHtml(ep.projectName)}</span>
                 <span class="text-[10px] font-semibold px-2 py-0.5 rounded uppercase ${
                   ep.status === 'Review' ? 'bg-[#fef3c7] text-[#92400e]' :
                   ep.status === 'Scheduled' ? 'bg-emerald-50 text-emerald-700' :
                   'bg-gray-100 text-gray-600'
-                }">${ep.status}</span>
+                }">${escapeHtml(ep.status)}</span>
               </div>
               <a href="/episodes/${ep.id}" class="block group">
-                <h3 class="text-base font-bold text-gray-900 mt-2 leading-snug group-hover:text-[#4338ca] transition">${ep.title}</h3>
+                <h3 class="text-base font-bold text-gray-900 mt-2 leading-snug group-hover:text-[#4338ca] transition">${escapeHtml(ep.title)}</h3>
               </a>
-              <p class="text-xs text-gray-500 mt-1 line-clamp-2">${ep.topic}</p>
+              <p class="text-xs text-gray-500 mt-1 line-clamp-2">${escapeHtml(ep.topic)}</p>
             </div>
 
             <div class="pt-3 border-t border-gray-100 space-y-3">
@@ -441,10 +440,10 @@ export function renderDashboardHtml(
                 <a href="/episodes/${ep.id}" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
                   Watch
                 </a>
-                <button onclick="assembleCapCutDraft('${ep.id}')" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
+                <button data-action="assemble-capcut" data-episode-id="${escapeHtml(ep.id)}" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
                   CapCut
                 </button>
-                <button onclick="openReleaseRoom('${ep.id}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm">
+                <button data-action="open-release" data-episode-id="${escapeHtml(ep.id)}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-3 py-2 rounded-xl transition shadow-sm">
                   Release
                 </button>
               </div>
@@ -461,7 +460,7 @@ export function renderDashboardHtml(
           <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Workforce Skills</h2>
           <p class="text-xs text-gray-500 mt-0.5">Automated creator skills ready to execute on your command</p>
         </div>
-        <button onclick="openTeachModal()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+        <button data-action="open-teach" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
           + Teach New Skill
         </button>
       </div>
@@ -471,15 +470,15 @@ export function renderDashboardHtml(
           <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4">
             <div>
               <div class="flex items-center justify-between">
-                <h3 class="text-sm font-bold text-gray-900">${s.name}</h3>
-                <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">v${s.version}</span>
+                <h3 class="text-sm font-bold text-gray-900">${escapeHtml(s.name)}</h3>
+                <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">v${escapeHtml(s.version)}</span>
               </div>
-              <p class="text-xs text-gray-500 mt-2 leading-relaxed">${s.description}</p>
+              <p class="text-xs text-gray-500 mt-2 leading-relaxed">${escapeHtml(s.description)}</p>
             </div>
 
             <div class="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
               <span class="text-gray-400 font-medium">${s.actions.length} action steps</span>
-              <button onclick="runSkill('${s.id}')" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition shadow-sm">
+              <button data-action="run-skill" data-skill-id="${escapeHtml(s.id)}" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition shadow-sm">
                 Run now
               </button>
             </div>
@@ -638,7 +637,7 @@ export function renderDashboardHtml(
           <p class="text-[11px] text-gray-400">Ask me to do something</p>
         </div>
       </div>
-      <button onclick="clearChat()" class="text-gray-400 hover:text-gray-600 text-xs" title="Clear chat">↺</button>
+      <button id="btnClearChat" class="text-gray-400 hover:text-gray-600 text-xs" title="Clear chat">↺</button>
     </div>
 
     <!-- Live Messages Stream -->
@@ -647,7 +646,7 @@ export function renderDashboardHtml(
       <!-- Assistant Bubble (Matching Home@2x.png) -->
       <div class="flex items-start gap-2.5">
         <div class="bg-gray-100 text-gray-800 rounded-2xl rounded-tl-sm p-3.5 leading-relaxed max-w-[88%]">
-          Hi Lams. <strong>${currentEpisode.title}</strong> has all ${currentEpisode.scenesCount || 6} scenes. Want me to get it ready for release?
+          Hi Lams. <strong>${escapeHtml(currentEpisode.title)}</strong> has all ${currentEpisode.scenesCount || 6} scenes. Want me to get it ready for release?
         </div>
       </div>
 
@@ -668,10 +667,10 @@ export function renderDashboardHtml(
         </ol>
         <p class="text-[11px] text-gray-400 pt-1">Nothing goes public until you confirm.</p>
         <div class="flex items-center gap-2 pt-1">
-          <button onclick="openReleaseRoom('${currentEpisode.id}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+          <button data-action="open-release" data-episode-id="${escapeHtml(currentEpisode.id)}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
             Confirm
           </button>
-          <button onclick="sendQuickPrompt('Change release time to Friday 6pm')" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition">
+          <button data-action="quick-prompt" data-prompt="Change release time to Friday 6pm" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition">
             Change
           </button>
         </div>
@@ -683,19 +682,19 @@ export function renderDashboardHtml(
     <div class="p-4 border-t border-gray-100 space-y-3">
       <!-- Suggestion Chips (Matching Home@2x.png) -->
       <div class="flex items-center gap-2 overflow-x-auto text-[11px] pb-1">
-        <button onclick="sendQuickPrompt('Show today\\'s work')" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+        <button data-action="quick-prompt" data-prompt="Show today's work" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
           Show today's work
         </button>
-        <button onclick="sendQuickPrompt('Make a Short for ' + '${currentEpisode.title}')" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+        <button data-action="quick-prompt" data-prompt="Make a Short for ${escapeHtml(currentEpisode.title)}" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
           Make a Short
         </button>
-        <button onclick="openTeachModal()" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+        <button data-action="open-teach" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
           Teach me a task
         </button>
       </div>
 
       <!-- Chat Input Field -->
-      <form onsubmit="handleChatSubmit(event)" class="relative flex items-center">
+      <form id="chatForm" class="relative flex items-center">
         <input 
           id="chatInput" 
           type="text" 
@@ -727,7 +726,7 @@ export function renderDashboardHtml(
           <h3 id="releaseEpisodeTitle" class="text-lg font-black text-gray-900">Release Room</h3>
           <p class="text-xs text-gray-500">Every upload starts private. Nothing goes public without your schedule.</p>
         </div>
-        <button onclick="closeReleaseRoom()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+        <button data-action="close-release" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
       </div>
 
       <!-- Live Preflight Checklist -->
@@ -754,10 +753,10 @@ export function renderDashboardHtml(
 
       <!-- Action Footer -->
       <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-        <button onclick="closeReleaseRoom()" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+        <button data-action="close-release" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
-        <button id="btnConfirmRelease" onclick="confirmAndPublish()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+        <button id="btnConfirmRelease" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
           Publish as Private Release
         </button>
       </div>
@@ -774,7 +773,7 @@ export function renderDashboardHtml(
           <h3 class="text-base font-bold text-gray-900">Teach Me a New Task</h3>
           <p class="text-xs text-gray-500">Show me once in your browser or desktop app; I'll save it as a reusable skill.</p>
         </div>
-        <button onclick="closeTeachModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+        <button data-action="close-teach" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
       </div>
 
       <div class="space-y-4 text-xs">
@@ -802,10 +801,10 @@ export function renderDashboardHtml(
       </div>
 
       <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-        <button onclick="closeTeachModal()" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+        <button data-action="close-teach" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
-        <button id="btnCompileSkill" onclick="compileDemonstrationSkill()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+        <button id="btnCompileSkill" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
           Compile into Reusable Skill
         </button>
       </div>
@@ -974,7 +973,7 @@ export function renderDashboardHtml(
         </ol>
         <p class="text-[11px] text-gray-400 pt-1">Nothing goes public until you confirm.</p>
         <div class="flex items-center gap-2 pt-1">
-          <button onclick="openReleaseRoom('\${plan.episodeId}')" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+          <button data-action="open-release" data-episode-id="\${plan.episodeId}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
             Confirm
           </button>
         </div>
@@ -998,7 +997,7 @@ export function renderDashboardHtml(
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         appendChatMessage('agent', '✓ CapCut draft created with ' + data.tracksCount + ' tracks. Ready to open in CapCut Desktop.');
-        alert('✓ CapCut Draft Created!\\nPath: ' + data.draftPath);
+        alert('✓ CapCut Draft Created!\nLocation: ' + (data.draftPath || 'Queued') + '\nOpen CapCut Desktop to see your timeline.');
       } catch (err) {
         appendChatMessage('agent', '❌ Failed to create draft: ' + err.message);
         alert('Error: ' + err.message);
@@ -1103,7 +1102,7 @@ export function renderDashboardHtml(
         if (data.error) throw new Error(data.error);
 
         msg.className = 'bg-emerald-50 text-emerald-900 border border-emerald-200 p-3 rounded-xl text-xs space-y-1';
-        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with Video ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to Scheduled in Supabase.';
+        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with Video ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to ' + (data.newStatus || 'Scheduled') + ' in Supabase.';
         msg.classList.remove('hidden');
 
         btn.innerText = 'Release Published';
@@ -1169,6 +1168,64 @@ export function renderDashboardHtml(
         alert('Error: ' + err.message);
       }
     }
+
+    // Centralized DOM Event Listeners & Event Delegation
+    document.addEventListener('DOMContentLoaded', () => {
+      // Sidebar Tab Buttons
+      document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const tab = e.currentTarget.getAttribute('data-tab');
+          if (tab) switchTab(tab);
+        });
+      });
+
+      // Episode Filter Buttons
+      document.querySelectorAll('.filter-ep-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const filter = e.currentTarget.getAttribute('data-filter');
+          if (filter) filterEpisodes(filter);
+        });
+      });
+
+      // Episode Search Input
+      document.getElementById('episodeSearchInput')?.addEventListener('input', (e) => {
+        filterEpisodesBySearch(e.target.value);
+      });
+
+      // Chat Form & Reset
+      document.getElementById('chatForm')?.addEventListener('submit', handleChatSubmit);
+      document.getElementById('btnClearChat')?.addEventListener('click', clearChat);
+
+      // Modals Action Buttons
+      document.getElementById('btnConfirmRelease')?.addEventListener('click', confirmAndPublish);
+      document.getElementById('btnCompileSkill')?.addEventListener('click', compileDemonstrationSkill);
+
+      // Delegated Action Handler
+      document.addEventListener('click', (e) => {
+        const actionEl = e.target.closest('[data-action]');
+        if (!actionEl) return;
+        const action = actionEl.getAttribute('data-action');
+        const episodeId = actionEl.getAttribute('data-episode-id');
+        const prompt = actionEl.getAttribute('data-prompt');
+        const skillId = actionEl.getAttribute('data-skill-id');
+
+        if (action === 'assemble-capcut' && episodeId) {
+          assembleCapCutDraft(episodeId);
+        } else if (action === 'open-release' && episodeId) {
+          openReleaseRoom(episodeId);
+        } else if (action === 'close-release') {
+          closeReleaseRoom();
+        } else if (action === 'open-teach') {
+          openTeachModal();
+        } else if (action === 'close-teach') {
+          closeTeachModal();
+        } else if (action === 'quick-prompt' && prompt) {
+          sendQuickPrompt(prompt);
+        } else if (action === 'run-skill' && skillId) {
+          runSkill(skillId);
+        }
+      });
+    });
   </script>
 </body>
 </html>

@@ -11,6 +11,7 @@ export interface AppConfig {
   ELEVENLABS_API_KEY?: string;
   PIXVERSE_API_KEY?: string;
   PORT: number;
+  BASE_URL?: string;
 }
 
 function loadEnvFile(filePath: string): Record<string, string> {
@@ -53,4 +54,5 @@ export const config: AppConfig = {
   ELEVENLABS_API_KEY: mergedEnv.ELEVENLABS_API_KEY,
   PIXVERSE_API_KEY: mergedEnv.PIXVERSE_API_KEY,
   PORT: parseInt(mergedEnv.PORT || '4200', 10),
+  BASE_URL: mergedEnv.BASE_URL,
 };

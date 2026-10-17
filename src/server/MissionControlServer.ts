@@ -11,7 +11,7 @@ import { ExportFolderWatcher } from '../adapters/media/ExportFolderWatcher.ts';
 import { WorkflowCompiler } from '../compiler/WorkflowCompiler.ts';
 import { SkillRegistry } from '../skills/SkillRegistry.ts';
 import { SkillRunner } from '../skills/SkillRunner.ts';
-import { AuthManager } from '../auth/AuthManager.ts';
+import { AuthManager, type AuthSession } from '../auth/AuthManager.ts';
 import { ApprovalManager } from '../auth/ApprovalManager.ts';
 import { DurableJobQueue } from '../jobs/DurableJobQueue.ts';
 import { renderDashboardHtml } from './views/DashboardHtml.ts';
@@ -74,26 +74,47 @@ export class MissionControlServer {
    * Guards sensitive routes. If LAMS_REQUIRE_AUTH is set or in production, enforces credentials.
    * If in local development, allows unauthenticated local requests with a warning header.
    */
-  private checkAuth(req: http.IncomingMessage, res: http.ServerResponse): boolean {
-    const requireAuth = process.env.LAMS_REQUIRE_AUTH === 'true' || process.env.NODE_ENV === 'production';
+  private checkAuth(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    requiredPermission?: 'read' | 'approve' | 'release' | 'admin'
+  ): { authorized: boolean; session?: AuthSession } {
+    const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+    const requireAuth = process.env.LAMS_REQUIRE_AUTH === 'true' || isProduction;
+    const hasAuthAttempt = !!(req.headers['authorization'] || req.headers['cookie']);
     const authResult = this.authManager.authenticateRequest(req);
 
-    if (authResult.authenticated) {
-      return true;
+    if (authResult.authenticated && authResult.session) {
+      if (requiredPermission && !this.authManager.hasPermission(authResult.session, requiredPermission)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Forbidden: role '${authResult.session.role}' lacks '${requiredPermission}' permission.` }));
+        return { authorized: false };
+      }
+      return { authorized: true, session: authResult.session };
     }
 
-    if (requireAuth) {
-      res.writeHead(401, {
+    if (requireAuth || hasAuthAttempt) {
+      const isCsrf = authResult.error?.includes('CSRF');
+      res.writeHead(isCsrf ? 403 : 401, {
         'Content-Type': 'application/json',
         'WWW-Authenticate': 'Bearer error="invalid_token"',
       });
       res.end(JSON.stringify({ error: authResult.error || 'Authentication required' }));
-      return false;
+      return { authorized: false };
     }
 
-    // Dev fallback for local developer ergonomics
+    // Dev fallback for local developer ergonomics (ONLY when no credentials sent in development)
     res.setHeader('X-Auth-Notice', 'Development mode: unauthenticated request allowed on localhost');
-    return true;
+    return {
+      authorized: true,
+      session: {
+        userId: 'dev-local-user',
+        role: 'admin',
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 86400000,
+        csrfToken: 'dev-csrf-token',
+      },
+    };
   }
 
   public async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -134,17 +155,40 @@ export class MissionControlServer {
         const candidate = secretKey || password;
 
         if (this.authManager.verifyLogin(candidate)) {
-          const sessionToken = this.authManager.createSessionToken('lams-creator', 'creator');
+          const { sessionToken, csrfToken } = this.authManager.createSessionToken('lams-creator', 'creator');
           const cookieHeader = this.authManager.getSessionCookieHeader(sessionToken);
 
           res.writeHead(200, {
             'Content-Type': 'application/json',
             'Set-Cookie': cookieHeader,
           });
-          res.end(JSON.stringify({ success: true, token: sessionToken }));
+          // Do not return session token in JSON body when using cookie auth
+          res.end(JSON.stringify({ success: true, csrfToken }));
         } else {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Invalid creator credentials' }));
+        }
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // Programmatic token endpoint for Bearer auth API clients / background services
+    if (method === 'POST' && url.pathname === '/api/auth/token') {
+      try {
+        const rawBody = await this.readRequestBody(req);
+        const { apiKey, secretKey } = JSON.parse(rawBody || '{}');
+        const candidate = apiKey || secretKey;
+
+        if (this.authManager.verifyLogin(candidate)) {
+          const { sessionToken } = this.authManager.createSessionToken('api-client', 'creator');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, accessToken: sessionToken, token: sessionToken, tokenType: 'Bearer' }));
+        } else {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Invalid API credentials' }));
         }
       } catch (err: any) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -335,9 +379,14 @@ export class MissionControlServer {
 
     // 8. API: Propose Release (Phase 1 of Two-Phase Cryptographic Approval)
     if (method === 'POST' && url.pathname.startsWith('/api/episodes/') && url.pathname.endsWith('/propose-release')) {
-      if (!this.checkAuth(req, res)) return;
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
       const episodeId = url.pathname.split('/')[3];
       try {
+        let rawBody = '';
+        try { rawBody = await this.readRequestBody(req); } catch {}
+        const bodyObj = rawBody ? JSON.parse(rawBody) : {};
+
         const episode = await this.bridge.getEpisodeDetails(episodeId);
         if (!episode) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -357,11 +406,16 @@ export class MissionControlServer {
           return;
         }
 
-        const { proposal, approvalToken } = this.approvalManager.createReleaseProposal({
+        const { proposal, approvalToken } = await this.approvalManager.createReleaseProposal({
           episodeId,
           title: episode.title,
           videoFilePath: exported.filePath,
-          channelTitle: channel.title || 'YouTube Channel',
+          destinationChannelId: channel.channelId || 'default-channel',
+          destinationChannelTitle: channel.title || 'YouTube Channel',
+          publishAt: bodyObj.publishAt || null,
+          requireThumbnail: bodyObj.requireThumbnail ?? false,
+          thumbnailFilePath: bodyObj.thumbnailFilePath,
+          approvedByUserId: auth.session?.userId || 'unknown-caller',
         });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -379,9 +433,24 @@ export class MissionControlServer {
 
     // 9. API: Assemble Real CapCut Draft
     if (method === 'POST' && url.pathname.startsWith('/api/episodes/') && url.pathname.endsWith('/capcut')) {
-      if (!this.checkAuth(req, res)) return;
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
       const episodeId = url.pathname.split('/')[3];
+      const isCloud = !!process.env.VERCEL || process.env.IS_CLOUD === 'true';
+
       try {
+        if (isCloud) {
+          const job = await this.jobQueue.enqueue('capcut_draft', { episodeId }, `capcut_${episodeId}_${Date.now()}`);
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            queued: true,
+            jobId: job.id,
+            message: 'CapCut draft assembly job enqueued for Windows Desktop Worker.',
+          }));
+          return;
+        }
+
         const mediaPlan = await this.bridge.compileRealEpisodeToMediaPlan(episodeId);
         const result = await this.capcutAdapter.createDraftFromMediaPlan(mediaPlan);
 
@@ -402,9 +471,24 @@ export class MissionControlServer {
 
     // 10. API: Render Master Video via FFmpeg
     if (method === 'POST' && url.pathname.startsWith('/api/episodes/') && url.pathname.endsWith('/render')) {
-      if (!this.checkAuth(req, res)) return;
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
       const episodeId = url.pathname.split('/')[3];
+      const isCloud = !!process.env.VERCEL || process.env.IS_CLOUD === 'true';
+
       try {
+        if (isCloud) {
+          const job = await this.jobQueue.enqueue('ffmpeg_render', { episodeId }, `render_${episodeId}_${Date.now()}`);
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            queued: true,
+            jobId: job.id,
+            message: 'Video rendering job enqueued for Windows Desktop Worker.',
+          }));
+          return;
+        }
+
         const mediaPlan = await this.bridge.compileRealEpisodeToMediaPlan(episodeId);
         const cleanTitle = (mediaPlan.title || 'episode').replace(/[^a-zA-Z0-9]/g, '_');
         const outName = `${cleanTitle}_${episodeId.substring(0, 8)}_master.mp4`;
@@ -428,7 +512,8 @@ export class MissionControlServer {
 
     // 11. API: Hardened Approve & Release Workflow (Phase 2 with Cryptographic Token & Verification)
     if (method === 'POST' && url.pathname.startsWith('/api/episodes/') && url.pathname.endsWith('/approve')) {
-      if (!this.checkAuth(req, res)) return;
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
       const episodeId = url.pathname.split('/')[3];
       try {
         // Step 1: Preflight validation
@@ -468,12 +553,13 @@ export class MissionControlServer {
         const bodyObj = rawBody ? JSON.parse(rawBody) : {};
         const approvalToken = (req.headers['x-approval-token'] as string) || bodyObj.approvalToken;
 
-        // In test mode or when approval token is provided, validate strictly
+        let validatedProposal: any = null;
         if (approvalToken) {
-          const validation = this.approvalManager.validateAndConsumeApproval(
+          const validation = await this.approvalManager.validateAndConsumeApproval(
             approvalToken,
             episodeId,
-            exported.filePath
+            exported.filePath,
+            auth.session?.userId
           );
           if (!validation.valid) {
             res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -483,7 +569,8 @@ export class MissionControlServer {
             }));
             return;
           }
-        } else if (process.env.LAMS_REQUIRE_AUTH === 'true' || process.env.NODE_ENV === 'production') {
+          validatedProposal = validation.proposal;
+        } else {
           res.writeHead(403, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             success: false,
@@ -494,15 +581,20 @@ export class MissionControlServer {
 
         // Step 3: Execute publishing skill (DO NOT TOUCH DATABASE YET)
         const pubSkill = this.skillRegistry.getSkill('youtube_publish')!;
+        const publishParams: Record<string, any> = {
+          episodeId,
+          title: validatedProposal?.title || episode.title,
+          description: `${episode.title}\n\n${episode.topic}\n\nProduced with LAMS HQ personal creator workforce.`,
+          videoFilePath: exported.filePath,
+          channelId: validatedProposal?.destinationChannelId || channel.channelId,
+          privacyStatus: 'private',
+          publishAt: validatedProposal?.publishAt || bodyObj.publishAt || null,
+        };
+
         const skillResult = await this.skillRunner.execute({
           missionId: episodeId,
           skill: pubSkill,
-          params: {
-            episodeId,
-            title: episode.title,
-            description: `${episode.title}\n\n${episode.topic}\n\nProduced with LAMS HQ personal creator workforce.`,
-            videoFilePath: exported.filePath,
-          },
+          params: publishParams,
           isApprovedByHuman: true,
         });
 
@@ -525,14 +617,21 @@ export class MissionControlServer {
           throw new Error('Upload finished but YouTube API did not confirm a valid video ID.');
         }
 
-        // Step 5: ONLY AFTER YouTube API confirms videoId, update Supabase DB
-        await this.bridge.updateEpisodeStatus(episodeId, 'Scheduled');
+        // Step 5: Truthful status assignment based on verified schedule
+        const hasVerifiedSchedule = Boolean(
+          publishParams.publishAt &&
+          new Date(publishParams.publishAt).getTime() > Date.now()
+        );
+        const newStatus = hasVerifiedSchedule ? 'Scheduled' : 'Uploaded_Private';
+
+        // ONLY AFTER YouTube API confirms videoId and verification succeeds, update Supabase DB
+        await this.bridge.updateEpisodeStatus(episodeId, newStatus);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
           episodeId,
-          newStatus: 'Scheduled',
+          newStatus,
           videoId,
           videoUrl: uploadData.videoUrl || `https://youtu.be/${videoId}`,
           receiptId: skillResult.receipt.receiptId,
@@ -680,6 +779,8 @@ export class MissionControlServer {
 
     // 14. API: Creator Assistant Chat with Plan Cards
     if (method === 'POST' && url.pathname === '/api/chat') {
+      const auth = this.checkAuth(req, res, 'read');
+      if (!auth.authorized) return;
       try {
         const body = await this.readRequestBody(req);
         const { message } = JSON.parse(body || '{}');
@@ -798,6 +899,8 @@ export class MissionControlServer {
 
     // 17. API: Durable Job Queue Endpoints (Worker and Client Polling)
     if (method === 'GET' && url.pathname === '/api/jobs') {
+      const auth = this.checkAuth(req, res, 'read');
+      if (!auth.authorized) return;
       const status = url.searchParams.get('status') as any;
       const jobs = this.jobQueue.listJobs(status);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -805,7 +908,9 @@ export class MissionControlServer {
       return;
     }
 
-    if (method === 'GET' && url.pathname.startsWith('/api/jobs/')) {
+    if (method === 'GET' && url.pathname.startsWith('/api/jobs/') && !url.pathname.includes('/claim') && !url.pathname.includes('/heartbeat') && !url.pathname.includes('/complete') && !url.pathname.includes('/fail')) {
+      const auth = this.checkAuth(req, res, 'read');
+      if (!auth.authorized) return;
       const jobId = url.pathname.split('/')[3];
       const job = this.jobQueue.getJob(jobId);
       if (!job) {
@@ -819,11 +924,85 @@ export class MissionControlServer {
     }
 
     if (method === 'POST' && url.pathname === '/api/jobs/enqueue') {
-      if (!this.checkAuth(req, res)) return;
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
       try {
         const body = await this.readRequestBody(req);
         const { type, payload, idempotencyKey } = JSON.parse(body || '{}');
         const job = await this.jobQueue.enqueue(type, payload || {}, idempotencyKey);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, job }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    // Windows Worker endpoints (claim, heartbeat, complete, fail)
+    if (method === 'POST' && url.pathname === '/api/jobs/claim') {
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
+      try {
+        const body = await this.readRequestBody(req);
+        const { workerId, supportedTypes } = JSON.parse(body || '{}');
+        if (!workerId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'workerId is required' }));
+          return;
+        }
+        const job = await this.jobQueue.claimNext(workerId, supportedTypes || ['capcut_draft', 'ffmpeg_render']);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ job }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'POST' && url.pathname.startsWith('/api/jobs/') && url.pathname.endsWith('/heartbeat')) {
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
+      const jobId = url.pathname.split('/')[3];
+      try {
+        const body = await this.readRequestBody(req);
+        const { workerId } = JSON.parse(body || '{}');
+        const renewed = await this.jobQueue.heartbeat(jobId, workerId);
+        res.writeHead(renewed ? 200 : 403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: renewed }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'POST' && url.pathname.startsWith('/api/jobs/') && url.pathname.endsWith('/complete')) {
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
+      const jobId = url.pathname.split('/')[3];
+      try {
+        const body = await this.readRequestBody(req);
+        const { workerId, result } = JSON.parse(body || '{}');
+        const job = await this.jobQueue.complete(jobId, workerId, result);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, job }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'POST' && url.pathname.startsWith('/api/jobs/') && url.pathname.endsWith('/fail')) {
+      const auth = this.checkAuth(req, res, 'release');
+      if (!auth.authorized) return;
+      const jobId = url.pathname.split('/')[3];
+      try {
+        const body = await this.readRequestBody(req);
+        const { workerId, error } = JSON.parse(body || '{}');
+        const job = await this.jobQueue.fail(jobId, workerId, error || 'Unknown error');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, job }));
       } catch (err: any) {

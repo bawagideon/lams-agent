@@ -1,17 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { pipeline } from 'node:stream/promises';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AuthManager } from './AuthManager.ts';
+import { config } from '../config/env.ts';
 
-export interface ReleaseProposal {
+export interface CanonicalReleasePlan {
   id: string;
   episodeId: string;
   title: string;
-  videoFilePath: string;
+  fullVideoSha256: string;
   videoSizeBytes: number;
-  videoFingerprint: string;
-  channelTitle: string;
-  publishAt?: string;
+  videoFilePath: string;
+  destinationChannelId: string;
+  destinationChannelTitle: string;
+  privacyStatus: 'private';
+  publishAt: string | null;
+  requireThumbnail: boolean;
+  thumbnailChecksum?: string | null;
+  approvedByUserId: string;
   status: 'PENDING' | 'CONSUMED' | 'EXPIRED' | 'REVOKED';
   createdAt: string;
   expiresAt: string;
@@ -21,9 +29,10 @@ export interface ReleaseProposal {
 export class ApprovalManager {
   private static instance: ApprovalManager;
   private filePath: string;
-  private proposals: Map<string, ReleaseProposal> = new Map();
+  private proposals: Map<string, CanonicalReleasePlan> = new Map();
   private authManager: AuthManager;
-  private ttlMs = 15 * 60 * 1000; // 15 minutes TTL for approval tokens
+  private supabase: SupabaseClient | null = null;
+  private ttlMs = 15 * 60 * 1000; // 15 minutes TTL
 
   private constructor() {
     this.authManager = AuthManager.getInstance();
@@ -35,6 +44,14 @@ export class ApprovalManager {
     }
     this.filePath = path.join(dataDir, 'approvals.json');
     this.loadFromFile();
+
+    if (config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        this.supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
+      } catch (err: any) {
+        console.warn(`[ApprovalManager] Supabase init warning: ${err.message}`);
+      }
+    }
   }
 
   public static getInstance(): ApprovalManager {
@@ -48,103 +65,168 @@ export class ApprovalManager {
     try {
       if (fs.existsSync(this.filePath)) {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
-        const items: ReleaseProposal[] = JSON.parse(raw);
+        const items: CanonicalReleasePlan[] = JSON.parse(raw);
         items.forEach(item => this.proposals.set(item.id, item));
       }
     } catch (err: any) {
-      console.warn(`[ApprovalManager] Could not read approvals file: ${err.message}`);
+      console.warn(`[ApprovalManager] Error reading local approvals file: ${err.message}`);
     }
   }
 
-  private persist(): void {
-    try {
-      const dataDir = path.dirname(this.filePath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      const array = Array.from(this.proposals.values());
-      fs.writeFileSync(this.filePath, JSON.stringify(array, null, 2), 'utf-8');
-    } catch (err: any) {
-      console.warn(`[ApprovalManager] Could not persist approvals to disk (${err.message})`);
+  private persistOrThrow(): void {
+    const dataDir = path.dirname(this.filePath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
+    const array = Array.from(this.proposals.values());
+    fs.writeFileSync(this.filePath, JSON.stringify(array, null, 2), 'utf-8');
   }
 
   /**
-   * Generates a cryptographic fingerprint of the first 8MB of the master video file.
+   * Computes SHA-256 digest of the entire master video file via streaming (memory-safe).
    */
-  public computeFileFingerprint(filePath: string): string {
+  public async computeFullFileSha256(filePath: string): Promise<string> {
     if (!fs.existsSync(filePath)) {
       throw new Error(`Master video file not found at: ${filePath}`);
     }
-    const buffer = Buffer.alloc(Math.min(8 * 1024 * 1024, fs.statSync(filePath).size));
-    const fd = fs.openSync(filePath, 'r');
-    fs.readSync(fd, buffer, 0, buffer.length, 0);
-    fs.closeSync(fd);
-    return crypto.createHash('sha256').update(buffer).digest('hex');
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    await pipeline(stream, hash);
+    return hash.digest('hex');
   }
 
   /**
-   * Generates an approval proposal that a human must review before release.
+   * Generates a canonical representation of all material release decisions.
    */
-  public createReleaseProposal(params: {
+  private buildCanonicalString(proposalId: string, plan: Omit<CanonicalReleasePlan, 'id' | 'status' | 'consumedAt'>): string {
+    return JSON.stringify({
+      proposalId,
+      episodeId: plan.episodeId,
+      fullVideoSha256: plan.fullVideoSha256,
+      videoSizeBytes: plan.videoSizeBytes,
+      title: plan.title,
+      destinationChannelId: plan.destinationChannelId,
+      privacyStatus: plan.privacyStatus,
+      publishAt: plan.publishAt || null,
+      requireThumbnail: plan.requireThumbnail,
+      thumbnailChecksum: plan.thumbnailChecksum || null,
+      approvedByUserId: plan.approvedByUserId,
+      createdAt: plan.createdAt,
+      expiresAt: plan.expiresAt,
+    });
+  }
+
+  /**
+   * Generates an approval proposal that binds every material release decision.
+   * Persists atomically; failure to persist aborts the operation.
+   */
+  public async createReleaseProposal(params: {
     episodeId: string;
     title: string;
     videoFilePath: string;
-    channelTitle: string;
-    publishAt?: string;
-  }): { proposal: ReleaseProposal; approvalToken: string } {
-    if (!fs.existsSync(params.videoFilePath)) {
-      throw new Error(`Cannot propose release: Video file does not exist at '${params.videoFilePath}'`);
+    destinationChannelId?: string;
+    destinationChannelTitle?: string;
+    publishAt?: string | null;
+    requireThumbnail?: boolean;
+    thumbnailFilePath?: string;
+    approvedByUserId?: string;
+  }): Promise<{ proposal: CanonicalReleasePlan; approvalToken: string }> {
+    const resolvedPath = path.resolve(params.videoFilePath);
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error(`Cannot propose release: Video file does not exist at '${resolvedPath}'`);
     }
 
-    const stats = fs.statSync(params.videoFilePath);
+    const stats = fs.statSync(resolvedPath);
     if (stats.size < 1024) {
-      throw new Error(`Cannot propose release: Video file is too small or corrupt (${stats.size} bytes)`);
+      throw new Error(`Cannot propose release: Video file too small or corrupted (${stats.size} bytes)`);
     }
 
-    const fingerprint = this.computeFileFingerprint(params.videoFilePath);
+    const fullSha256 = await this.computeFullFileSha256(resolvedPath);
+
+    let thumbnailChecksum: string | null = null;
+    if (params.thumbnailFilePath && fs.existsSync(params.thumbnailFilePath)) {
+      thumbnailChecksum = await this.computeFullFileSha256(params.thumbnailFilePath);
+    }
+
     const id = crypto.randomUUID();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + this.ttlMs).toISOString();
 
-    const proposal: ReleaseProposal = {
-      id,
+    const planData: Omit<CanonicalReleasePlan, 'id' | 'status' | 'consumedAt'> = {
       episodeId: params.episodeId,
       title: params.title,
-      videoFilePath: path.resolve(params.videoFilePath),
+      fullVideoSha256: fullSha256,
       videoSizeBytes: stats.size,
-      videoFingerprint: fingerprint,
-      channelTitle: params.channelTitle,
-      publishAt: params.publishAt,
-      status: 'PENDING',
+      videoFilePath: resolvedPath,
+      destinationChannelId: params.destinationChannelId || 'default-channel',
+      destinationChannelTitle: params.destinationChannelTitle || 'LAMS Channel',
+      privacyStatus: 'private', // Strictly enforce private release
+      publishAt: params.publishAt || null,
+      requireThumbnail: params.requireThumbnail ?? false,
+      thumbnailChecksum,
+      approvedByUserId: params.approvedByUserId || 'lams-creator',
       createdAt: now.toISOString(),
       expiresAt,
     };
 
-    // Sign the proposal ID and fingerprint with the server secret
-    const sigPayload = `${id}:${proposal.episodeId}:${proposal.videoFingerprint}:${proposal.expiresAt}`;
+    const canonicalString = this.buildCanonicalString(id, planData);
     const signature = crypto
       .createHmac('sha256', this.authManager.getSecret())
-      .update(sigPayload)
+      .update(canonicalString)
       .digest('base64url');
 
     const approvalToken = `${id}.${signature}`;
 
+    const proposal: CanonicalReleasePlan = {
+      id,
+      ...planData,
+      status: 'PENDING',
+    };
+
+    // Store in Supabase if connected
+    if (this.supabase) {
+      try {
+        const { error } = await this.supabase.from('agent_approvals').insert({
+          id: proposal.id,
+          episode_id: proposal.episodeId,
+          title: proposal.title,
+          video_file_path: proposal.videoFilePath,
+          video_size_bytes: proposal.videoSizeBytes,
+          video_fingerprint: proposal.fullVideoSha256,
+          channel_title: proposal.destinationChannelTitle,
+          publish_at: proposal.publishAt,
+          status: 'PENDING',
+          approval_token: approvalToken,
+          created_at: proposal.createdAt,
+          expires_at: proposal.expiresAt,
+        });
+        if (error && !error.message.includes('relation "public.agent_approvals" does not exist')) {
+          throw new Error(`Database approval persistence failed: ${error.message}`);
+        }
+      } catch (dbErr: any) {
+        if (!dbErr.message.includes('does not exist')) {
+          throw dbErr;
+        }
+      }
+    }
+
+    // Persist locally
     this.proposals.set(id, proposal);
-    this.persist();
+    this.persistOrThrow();
 
     return { proposal, approvalToken };
   }
 
   /**
-   * Validates and consumes an approval token.
-   * STRICT: Fails if token is missing, forged, expired, already consumed, or if the video file was changed.
+   * Validates and atomically consumes an approval token.
+   * Verifies the full video SHA-256 and all canonical plan parameters.
    */
-  public validateAndConsumeApproval(
+  public async validateAndConsumeApproval(
     approvalToken: string,
     expectedEpisodeId: string,
-    currentVideoFilePath: string
-  ): { valid: boolean; proposal?: ReleaseProposal; error?: string } {
+    currentVideoFilePath: string,
+    callerUserId?: string
+  ): Promise<{ valid: boolean; proposal?: CanonicalReleasePlan; error?: string }> {
     if (!approvalToken || typeof approvalToken !== 'string') {
       return { valid: false, error: 'Release denied: Missing required approval token.' };
     }
@@ -163,8 +245,8 @@ export class ApprovalManager {
     // 1. Check expiration
     if (Date.now() > Date.parse(proposal.expiresAt)) {
       proposal.status = 'EXPIRED';
-      this.persist();
-      return { valid: false, error: 'Release denied: Approval proposal has expired (15-minute window exceeded).' };
+      this.persistOrThrow();
+      return { valid: false, error: 'Release denied: Approval proposal expired (15-minute window exceeded).' };
     }
 
     // 2. Check replay attack
@@ -175,11 +257,11 @@ export class ApprovalManager {
       };
     }
 
-    // 3. Verify signature
-    const sigPayload = `${proposalId}:${proposal.episodeId}:${proposal.videoFingerprint}:${proposal.expiresAt}`;
+    // 3. Verify signature against canonical representation
+    const canonicalString = this.buildCanonicalString(proposalId, proposal);
     const expectedSig = crypto
       .createHmac('sha256', this.authManager.getSecret())
-      .update(sigPayload)
+      .update(canonicalString)
       .digest('base64url');
 
     if (providedSig.length !== expectedSig.length || !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))) {
@@ -191,7 +273,7 @@ export class ApprovalManager {
       return { valid: false, error: `Release denied: Token is bound to episode '${proposal.episodeId}', not '${expectedEpisodeId}'.` };
     }
 
-    // 5. Verify video file integrity (has not been swapped or corrupted)
+    // 5. Verify full video file integrity
     const resolvedCurrentPath = path.resolve(currentVideoFilePath);
     if (proposal.videoFilePath !== resolvedCurrentPath) {
       return { valid: false, error: 'Release denied: Approved video file path does not match target release file.' };
@@ -202,15 +284,41 @@ export class ApprovalManager {
       return { valid: false, error: 'Release denied: Video file size was altered after approval was granted.' };
     }
 
-    const currentFingerprint = this.computeFileFingerprint(resolvedCurrentPath);
-    if (currentFingerprint !== proposal.videoFingerprint) {
-      return { valid: false, error: 'Release denied: Video file content hash mismatch (file altered after review).' };
+    const currentSha256 = await this.computeFullFileSha256(resolvedCurrentPath);
+    if (currentSha256 !== proposal.fullVideoSha256) {
+      return { valid: false, error: 'Release denied: Full video SHA-256 hash mismatch (file altered after review).' };
     }
 
-    // 6. Consume the proposal
+    // 6. Atomic Consumption in Supabase (if available)
+    if (this.supabase) {
+      try {
+        const { data, error } = await this.supabase
+          .from('agent_approvals')
+          .update({
+            status: 'CONSUMED',
+            consumed_at: new Date().toISOString(),
+          })
+          .eq('id', proposalId)
+          .eq('status', 'PENDING')
+          .select();
+
+        if (error && !error.message.includes('does not exist')) {
+          throw new Error(`Database consumption failed: ${error.message}`);
+        }
+        if (data && data.length === 0) {
+          return { valid: false, error: 'Release denied: Concurrent release attempt detected; proposal already consumed.' };
+        }
+      } catch (dbErr: any) {
+        if (!dbErr.message.includes('does not exist')) {
+          throw dbErr;
+        }
+      }
+    }
+
+    // 7. Atomic Consumption in memory & local store
     proposal.status = 'CONSUMED';
     proposal.consumedAt = new Date().toISOString();
-    this.persist();
+    this.persistOrThrow();
 
     return { valid: true, proposal };
   }

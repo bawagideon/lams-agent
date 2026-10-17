@@ -12,6 +12,7 @@ import { ExportFolderWatcher } from '../adapters/media/ExportFolderWatcher.ts';
 import { HeadlessRenderer } from '../adapters/media/HeadlessRenderer.ts';
 import { YTEngineBridge } from '../bridge/YTEngineBridge.ts';
 import { config } from '../config/env.ts';
+import { CredentialStore } from '../auth/CredentialStore.ts';
 
 export interface SkillExecutionInput {
   missionId: string;
@@ -161,33 +162,54 @@ export class SkillRunner {
             };
           }
 
-          if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET && config.GOOGLE_REFRESH_TOKEN) {
-            try {
-              const publisher = new YouTubePublisher(
-                config.GOOGLE_CLIENT_ID,
-                config.GOOGLE_CLIENT_SECRET,
-                config.GOOGLE_REFRESH_TOKEN
-              );
-              const verified = await publisher.verifyVideo(videoId);
-              if (!verified.exists) {
-                throw new Error(`Video ID ${videoId} not confirmed by YouTube.`);
-              }
-            } catch (err: any) {
-              const failedReceipt = generateEvidenceReceipt(
-                missionId,
-                skill.id,
-                skill.version,
-                `Agent Executor (${skill.name})`,
-                'FAILED',
-                startedAt,
-                stepsEvidence,
-                { error: `Postcondition failed: Video live verification failed (${err.message})` }
-              );
-              return {
-                receipt: failedReceipt,
-                outputData: { status: 'FAILED', error: `YouTube live verification failed: ${err.message}` },
-              };
+          const refreshToken = CredentialStore.getInstance().getYouTubeRefreshToken() || config.GOOGLE_REFRESH_TOKEN;
+          if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !refreshToken) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: 'Postcondition failed: Missing active YouTube credentials. Cannot verify live release.' }
+            );
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: 'Missing active YouTube credentials for live verification.' },
+            };
+          }
+
+          try {
+            const publisher = new YouTubePublisher(
+              config.GOOGLE_CLIENT_ID,
+              config.GOOGLE_CLIENT_SECRET,
+              refreshToken
+            );
+            const verified = await publisher.verifyVideo(videoId, {
+              channelId: params.targetChannelId || params.channelId,
+              title: params.title,
+              privacyStatus: 'private',
+              publishAt: params.publishAt,
+            });
+            if (!verified.exists) {
+              throw new Error(`Video ID ${videoId} not confirmed by YouTube.`);
             }
+          } catch (err: any) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: `Postcondition failed: Video live verification failed (${err.message})` }
+            );
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: `YouTube live verification failed: ${err.message}` },
+            };
           }
         } else if (condition === 'draft_content_json_exists') {
           const draftOut = outputData['editor.write_capcut_draft'];
@@ -316,7 +338,8 @@ export class SkillRunner {
           );
         }
 
-        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+        const refreshToken = CredentialStore.getInstance().getYouTubeRefreshToken() || config.GOOGLE_REFRESH_TOKEN;
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !refreshToken) {
           throw new Error(
             `YouTube account is not linked. Please click 'Link YouTube Channel' in Connections before publishing.`
           );
@@ -325,7 +348,7 @@ export class SkillRunner {
         const publisher = new YouTubePublisher(
           config.GOOGLE_CLIENT_ID,
           config.GOOGLE_CLIENT_SECRET,
-          config.GOOGLE_REFRESH_TOKEN
+          refreshToken
         );
 
         const publishReceipt = await publisher.publish({
@@ -356,14 +379,15 @@ export class SkillRunner {
         if (!videoId) {
           throw new Error('Cannot set YouTube metadata: No videoId found from upload step or params.');
         }
-        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+        const refreshToken = CredentialStore.getInstance().getYouTubeRefreshToken() || config.GOOGLE_REFRESH_TOKEN;
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !refreshToken) {
           throw new Error('Cannot set YouTube metadata: Missing YouTube OAuth credentials.');
         }
 
         const publisher = new YouTubePublisher(
           config.GOOGLE_CLIENT_ID,
           config.GOOGLE_CLIENT_SECRET,
-          config.GOOGLE_REFRESH_TOKEN
+          refreshToken
         );
 
         const res = await publisher.setMetadata(videoId, {
@@ -393,14 +417,15 @@ export class SkillRunner {
         if (!videoId) {
           throw new Error('Cannot set YouTube thumbnail: No videoId found from upload step or params.');
         }
-        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+        const refreshToken = CredentialStore.getInstance().getYouTubeRefreshToken() || config.GOOGLE_REFRESH_TOKEN;
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !refreshToken) {
           throw new Error('Cannot set YouTube thumbnail: Missing YouTube OAuth credentials.');
         }
 
         const publisher = new YouTubePublisher(
           config.GOOGLE_CLIENT_ID,
           config.GOOGLE_CLIENT_SECRET,
-          config.GOOGLE_REFRESH_TOKEN
+          refreshToken
         );
 
         const res = await publisher.setThumbnail(videoId, thumbnailPath);
@@ -422,14 +447,15 @@ export class SkillRunner {
         if (!videoId) {
           throw new Error('Cannot configure YouTube schedule: No videoId found from upload step or params.');
         }
-        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.GOOGLE_REFRESH_TOKEN) {
+        const refreshToken = CredentialStore.getInstance().getYouTubeRefreshToken() || config.GOOGLE_REFRESH_TOKEN;
+        if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !refreshToken) {
           throw new Error('Cannot configure YouTube schedule: Missing YouTube OAuth credentials.');
         }
 
         const publisher = new YouTubePublisher(
           config.GOOGLE_CLIENT_ID,
           config.GOOGLE_CLIENT_SECRET,
-          config.GOOGLE_REFRESH_TOKEN
+          refreshToken
         );
 
         const res = await publisher.setSchedule(videoId, publishAt);

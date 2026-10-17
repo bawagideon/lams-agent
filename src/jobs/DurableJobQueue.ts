@@ -24,9 +24,10 @@ export interface AgentJob {
 export class DurableJobQueue {
   private static instance: DurableJobQueue;
   private filePath: string;
-  private jobs: Map<string, AgentJob> = new Map();
+  private localJobs: Map<string, AgentJob> = new Map();
   private supabase: SupabaseClient | null = null;
-  private hasSupabaseTable: boolean = false;
+  private isSupabaseAuthoritative: boolean = false;
+  private initPromise: Promise<void>;
 
   private constructor() {
     const dataDir = path.resolve('data');
@@ -40,11 +41,15 @@ export class DurableJobQueue {
 
     if (config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY) {
       try {
-        this.supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
+        this.supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY, {
+          auth: { persistSession: false },
+        });
       } catch (err: any) {
         console.warn(`[DurableJobQueue] Supabase client init error: ${err.message}`);
       }
     }
+
+    this.initPromise = this.checkSupabaseSchema();
   }
 
   public static getInstance(): DurableJobQueue {
@@ -54,44 +59,148 @@ export class DurableJobQueue {
     return DurableJobQueue.instance;
   }
 
+  public async ready(): Promise<void> {
+    await this.initPromise;
+  }
+
+  private async checkSupabaseSchema(): Promise<void> {
+    if (!this.supabase) {
+      const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+      if (isProduction) {
+        console.error('[DurableJobQueue] FATAL: Production queue requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+      }
+      return;
+    }
+
+    try {
+      const { data, error } = await this.supabase
+        .from('agent_jobs')
+        .select('id')
+        .limit(1);
+
+      if (!error) {
+        this.isSupabaseAuthoritative = true;
+        console.log('[DurableJobQueue] Connected to authoritative Supabase agent_jobs table.');
+      } else {
+        console.warn(`[DurableJobQueue] Supabase agent_jobs table query error (${error.message}). Using local durable fallback.`);
+      }
+    } catch (err: any) {
+      console.warn(`[DurableJobQueue] Supabase connectivity check error: ${err.message}`);
+    }
+  }
+
   private loadFromFile(): void {
     try {
       if (fs.existsSync(this.filePath)) {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         const items: AgentJob[] = JSON.parse(raw);
-        items.forEach(job => this.jobs.set(job.id, job));
+        items.forEach(job => this.localJobs.set(job.id, job));
       }
     } catch (err: any) {
       console.warn(`[DurableJobQueue] Error reading local jobs: ${err.message}`);
     }
   }
 
-  private persist(): void {
-    try {
-      const dataDir = path.dirname(this.filePath);
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      const array = Array.from(this.jobs.values());
-      fs.writeFileSync(this.filePath, JSON.stringify(array, null, 2), 'utf-8');
-    } catch (err: any) {
-      console.warn(`[DurableJobQueue] Error writing local jobs: ${err.message}`);
+  private persistOrThrow(): void {
+    const dataDir = path.dirname(this.filePath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
+    const array = Array.from(this.localJobs.values());
+    fs.writeFileSync(this.filePath, JSON.stringify(array, null, 2), 'utf-8');
   }
 
   /**
-   * Enqueues a new job with idempotency key deduplication.
+   * Enqueues a job with database-enforced idempotency deduplication.
    */
   public async enqueue(
     type: JobType,
     payload: Record<string, any>,
     idempotencyKey?: string
   ): Promise<AgentJob> {
-    // 1. Idempotency check
+    await this.initPromise;
+
+    if (this.isSupabaseAuthoritative && this.supabase) {
+      // 1. Check existing if idempotency key is provided
+      if (idempotencyKey) {
+        const { data: existing } = await this.supabase
+          .from('agent_jobs')
+          .select('*')
+          .eq('idempotency_key', idempotencyKey)
+          .maybeSingle();
+
+        if (existing) {
+          return {
+            id: existing.id,
+            idempotencyKey: existing.idempotency_key,
+            type: existing.job_type as JobType,
+            status: existing.status as JobStatus,
+            payload: existing.payload,
+            result: existing.result,
+            error: existing.error_message,
+            claimedBy: existing.claimed_by,
+            heartbeatAt: existing.heartbeat_at,
+            createdAt: existing.created_at,
+            updatedAt: existing.updated_at,
+          };
+        }
+      }
+
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      const { data: inserted, error } = await this.supabase
+        .from('agent_jobs')
+        .insert({
+          id,
+          idempotency_key: idempotencyKey,
+          job_type: type,
+          status: 'PENDING',
+          payload,
+          created_at: now,
+          updated_at: now,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        // If conflict error on idempotency_key, fetch again
+        if (idempotencyKey && error.message.includes('unique constraint')) {
+          const { data: conflictRow } = await this.supabase
+            .from('agent_jobs')
+            .select('*')
+            .eq('idempotency_key', idempotencyKey)
+            .single();
+          if (conflictRow) {
+            return {
+              id: conflictRow.id,
+              idempotencyKey: conflictRow.idempotency_key,
+              type: conflictRow.job_type,
+              status: conflictRow.status,
+              payload: conflictRow.payload,
+              createdAt: conflictRow.created_at,
+              updatedAt: conflictRow.updated_at,
+            };
+          }
+        }
+        throw new Error(`Failed to enqueue job in Supabase: ${error.message}`);
+      }
+
+      return {
+        id: inserted.id,
+        idempotencyKey: inserted.idempotency_key,
+        type: inserted.job_type as JobType,
+        status: inserted.status as JobStatus,
+        payload: inserted.payload,
+        createdAt: inserted.created_at,
+        updatedAt: inserted.updated_at,
+      };
+    }
+
+    // Local durable fallback
     if (idempotencyKey) {
-      for (const existing of this.jobs.values()) {
+      for (const existing of this.localJobs.values()) {
         if (existing.idempotencyKey === idempotencyKey) {
-          // If already in flight or done, return existing
           return existing;
         }
       }
@@ -99,7 +208,6 @@ export class DurableJobQueue {
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-
     const job: AgentJob = {
       id,
       idempotencyKey,
@@ -110,41 +218,72 @@ export class DurableJobQueue {
       updatedAt: now,
     };
 
-    this.jobs.set(id, job);
-    this.persist();
-
-    // Optionally sync to Supabase if table exists
-    if (this.supabase && this.hasSupabaseTable) {
-      try {
-        await this.supabase.from('agent_jobs').insert({
-          id: job.id,
-          idempotency_key: job.idempotencyKey,
-          job_type: job.type,
-          status: job.status,
-          payload: job.payload,
-          created_at: job.createdAt,
-          updated_at: job.updatedAt,
-        });
-      } catch {
-        // Table not ready; local store is durable
-      }
-    }
-
+    this.localJobs.set(id, job);
+    this.persistOrThrow();
     return job;
   }
 
   /**
-   * Claims the next available pending job matching supported types.
-   * Also re-claims abandoned jobs whose heartbeats have expired (> 2 mins).
+   * Atomically claims the next available job using conditional database update.
    */
   public async claimNext(
     workerId: string,
     supportedTypes: JobType[]
   ): Promise<AgentJob | null> {
+    await this.initPromise;
     const now = Date.now();
-    const staleThreshold = now - 2 * 60 * 1000; // 2 minutes
+    const staleThresholdIso = new Date(now - 2 * 60 * 1000).toISOString(); // 2-minute stale threshold
 
-    for (const job of this.jobs.values()) {
+    if (this.isSupabaseAuthoritative && this.supabase) {
+      // Find candidate job
+      const { data: candidates, error: findErr } = await this.supabase
+        .from('agent_jobs')
+        .select('*')
+        .in('job_type', supportedTypes)
+        .or(`status.eq.PENDING,and(status.eq.CLAIMED,heartbeat_at.lt.${staleThresholdIso}),and(status.eq.RUNNING,heartbeat_at.lt.${staleThresholdIso})`)
+        .order('created_at', { ascending: true })
+        .limit(3);
+
+      if (findErr || !candidates || candidates.length === 0) {
+        return null;
+      }
+
+      for (const candidate of candidates) {
+        const claimNow = new Date().toISOString();
+        // Atomic conditional update
+        const { data: claimedRows, error: claimErr } = await this.supabase
+          .from('agent_jobs')
+          .update({
+            status: 'CLAIMED',
+            claimed_by: workerId,
+            heartbeat_at: claimNow,
+            updated_at: claimNow,
+          })
+          .eq('id', candidate.id)
+          .eq('status', candidate.status)
+          .select();
+
+        if (!claimErr && claimedRows && claimedRows.length > 0) {
+          const claimed = claimedRows[0];
+          return {
+            id: claimed.id,
+            idempotencyKey: claimed.idempotency_key,
+            type: claimed.job_type as JobType,
+            status: 'CLAIMED',
+            payload: claimed.payload,
+            claimedBy: claimed.claimed_by,
+            heartbeatAt: claimed.heartbeat_at,
+            createdAt: claimed.created_at,
+            updatedAt: claimed.updated_at,
+          };
+        }
+      }
+      return null;
+    }
+
+    // Local durable fallback
+    const staleThreshold = now - 2 * 60 * 1000;
+    for (const job of this.localJobs.values()) {
       if (!supportedTypes.includes(job.type)) continue;
 
       const isPending = job.status === 'PENDING';
@@ -157,7 +296,7 @@ export class DurableJobQueue {
         job.claimedBy = workerId;
         job.heartbeatAt = new Date(now).toISOString();
         job.updatedAt = new Date(now).toISOString();
-        this.persist();
+        this.persistOrThrow();
         return { ...job };
       }
     }
@@ -166,64 +305,142 @@ export class DurableJobQueue {
   }
 
   /**
-   * Updates worker heartbeat while a job is running.
+   * Updates worker heartbeat with worker lease ownership check.
    */
   public async heartbeat(jobId: string, workerId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
+    await this.initPromise;
+    const nowIso = new Date().toISOString();
+
+    if (this.isSupabaseAuthoritative && this.supabase) {
+      const { data, error } = await this.supabase
+        .from('agent_jobs')
+        .update({
+          status: 'RUNNING',
+          heartbeat_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq('id', jobId)
+        .eq('claimed_by', workerId)
+        .select();
+
+      return !error && !!data && data.length > 0;
+    }
+
+    const job = this.localJobs.get(jobId);
     if (!job || job.claimedBy !== workerId) return false;
 
     job.status = 'RUNNING';
-    job.heartbeatAt = new Date().toISOString();
-    job.updatedAt = new Date().toISOString();
-    this.persist();
+    job.heartbeatAt = nowIso;
+    job.updatedAt = nowIso;
+    this.persistOrThrow();
     return true;
   }
 
   /**
-   * Marks a job as completed with its resulting data.
+   * Marks a job completed with worker lease ownership check.
    */
   public async complete(jobId: string, workerId: string, result: any): Promise<AgentJob> {
-    const job = this.jobs.get(jobId);
-    if (!job) throw new Error(`Job ${jobId} not found`);
+    await this.initPromise;
+    const nowIso = new Date().toISOString();
+
+    if (this.isSupabaseAuthoritative && this.supabase) {
+      const { data, error } = await this.supabase
+        .from('agent_jobs')
+        .update({
+          status: 'COMPLETED',
+          result,
+          updated_at: nowIso,
+        })
+        .eq('id', jobId)
+        .eq('claimed_by', workerId)
+        .select();
+
+      if (error || !data || data.length === 0) {
+        throw new Error(`Failed to complete job ${jobId}: Lease ownership lost or job already terminated.`);
+      }
+
+      const row = data[0];
+      return {
+        id: row.id,
+        idempotencyKey: row.idempotency_key,
+        type: row.job_type as JobType,
+        status: 'COMPLETED',
+        payload: row.payload,
+        result: row.result,
+        claimedBy: row.claimed_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    }
+
+    const job = this.localJobs.get(jobId);
+    if (!job || job.claimedBy !== workerId) {
+      throw new Error(`Failed to complete job ${jobId}: Worker '${workerId}' does not own active lease.`);
+    }
 
     job.status = 'COMPLETED';
-    job.claimedBy = workerId;
     job.result = result;
-    job.updatedAt = new Date().toISOString();
-    this.persist();
-
+    job.updatedAt = nowIso;
+    this.persistOrThrow();
     return { ...job };
   }
 
   /**
-   * Marks a job as failed with an error message.
+   * Marks a job failed with worker lease ownership check.
    */
   public async fail(jobId: string, workerId: string, errorMessage: string): Promise<AgentJob> {
-    const job = this.jobs.get(jobId);
-    if (!job) throw new Error(`Job ${jobId} not found`);
+    await this.initPromise;
+    const nowIso = new Date().toISOString();
+
+    if (this.isSupabaseAuthoritative && this.supabase) {
+      const { data, error } = await this.supabase
+        .from('agent_jobs')
+        .update({
+          status: 'FAILED',
+          error_message: errorMessage,
+          updated_at: nowIso,
+        })
+        .eq('id', jobId)
+        .eq('claimed_by', workerId)
+        .select();
+
+      if (error || !data || data.length === 0) {
+        throw new Error(`Failed to fail job ${jobId}: Lease ownership lost.`);
+      }
+
+      const row = data[0];
+      return {
+        id: row.id,
+        idempotencyKey: row.idempotency_key,
+        type: row.job_type as JobType,
+        status: 'FAILED',
+        payload: row.payload,
+        error: row.error_message,
+        claimedBy: row.claimed_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    }
+
+    const job = this.localJobs.get(jobId);
+    if (!job || job.claimedBy !== workerId) {
+      throw new Error(`Failed to report failure for job ${jobId}: Worker '${workerId}' does not own active lease.`);
+    }
 
     job.status = 'FAILED';
-    job.claimedBy = workerId;
     job.error = errorMessage;
-    job.updatedAt = new Date().toISOString();
-    this.persist();
-
+    job.updatedAt = nowIso;
+    this.persistOrThrow();
     return { ...job };
   }
 
-  /**
-   * Retrieves a job by ID.
-   */
   public getJob(jobId: string): AgentJob | null {
-    const job = this.jobs.get(jobId);
+    const job = this.localJobs.get(jobId);
     return job ? { ...job } : null;
   }
 
-  /**
-   * Lists all jobs with optional status filter.
-   */
   public listJobs(status?: JobStatus): AgentJob[] {
-    const all = Array.from(this.jobs.values());
+    const all = Array.from(this.localJobs.values());
     if (status) {
       return all.filter(j => j.status === status);
     }
