@@ -66,5 +66,132 @@
       "maxRetries": 2,
       "alertLevel": "medium"
     }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "schedule_tiktok_short",
+    "name": "Schedule TikTok Short",
+    "version": "1.0.0",
+    "description": "Synthesized skill compiled from 6 demonstration actions in TikTok Web.",
+    "executionMode": "browser_agent",
+    "inputs": {
+      "input_file_3": {
+        "type": "filepath",
+        "description": "Input file selected in TikTok Web",
+        "required": true
+      },
+      "text_field_4": {
+        "type": "string",
+        "description": "Text entered for Caption Textarea",
+        "required": true
+      }
+    },
+    "preconditions": [
+      "target_application_accessible"
+    ],
+    "approvalGate": {
+      "required": true,
+      "level": "2_approval_gate",
+      "prompt": "Review proposed execution parameters before Schedule TikTok Short executes."
+    },
+    "actions": [
+      {
+        "step": 1,
+        "name": "Navigate to Upload Page",
+        "action": "browser.navigate",
+        "parameters": {
+          "target": "https://www.tiktok.com/creator-center/upload"
+        }
+      },
+      {
+        "step": 2,
+        "name": "Click Select Video File Button",
+        "action": "ui.click",
+        "parameters": {
+          "target": "Select Video File Button",
+          "selector": "input[type=file]"
+        }
+      },
+      {
+        "step": 3,
+        "name": "Select Rendered MP4",
+        "action": "file.select",
+        "parameters": {
+          "fileKey": "input_file_3"
+        }
+      },
+      {
+        "step": 4,
+        "name": "Enter Caption Textarea",
+        "action": "form.fill_text",
+        "parameters": {
+          "field": ".caption-input",
+          "valueKey": "text_field_4"
+        }
+      },
+      {
+        "step": 5,
+        "name": "Click Schedule Post Button",
+        "action": "ui.click",
+        "parameters": {
+          "target": "Schedule Post Button"
+        }
+      },
+      {
+        "step": 6,
+        "name": "Verify Post Scheduled Successfully",
+        "action": "action.verify",
+        "parameters": {
+          "condition": "Post Scheduled Successfully"
+        }
+      }
+    ],
+    "verification": {
+      "postconditions": [
+        "target_screen_state_matches_final_demonstration"
+      ],
+      "proofRequired": true
+    },
+    "failureRecovery": {
+      "maxRetries": 2,
+      "alertLevel": "medium"
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "create_youtube_video",
+    "name": "Create YouTube Video",
+    "version": "1.0.0",
+    "description": "Synthesized skill compiled from 1 demonstration actions in YouTube Studio.",
+    "executionMode": "browser_agent",
+    "inputs": {},
+    "preconditions": [
+      "target_application_accessible"
+    ],
+    "approvalGate": {
+      "required": false,
+      "level": "1_notify",
+      "prompt": "Review proposed execution parameters before Create YouTube Video executes."
+    },
+    "actions": [
+      {
+        "step": 1,
+        "name": "Click Create Video",
+        "action": "ui.click",
+        "parameters": {
+          "target": "Create Video"
+        }
+      }
+    ],
+    "verification": {
+      "postconditions": [
+        "target_screen_state_matches_final_demonstration"
+      ],
+      "proofRequired": true
+    },
+    "failureRecovery": {
+      "maxRetries": 2,
+      "alertLevel": "medium"
+    }
   }
 ]

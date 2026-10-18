@@ -57,9 +57,16 @@ export class WorkflowCompiler {
           action: 'form.fill_text',
           parameters: { field: ev.targetElement?.selector || ev.targetElement?.text, valueKey: inputKey },
         });
+      } else if (ev.eventType === 'assertion') {
+        steps.push({
+          step: stepIndex++,
+          name: `Verify ${ev.targetElement?.text || 'Expected State'}`,
+          action: 'action.verify',
+          parameters: { condition: ev.targetElement?.text || ev.inputData || 'Condition verified' },
+        });
       } else if (ev.eventType === 'click') {
         const label = ev.targetElement?.text || 'Element';
-        if (/publish|upload|export|submit|delete/i.test(label)) {
+        if (/publish|upload|export|submit|delete|schedule|release/i.test(label)) {
           hasPublishOrExport = true;
         }
         steps.push({

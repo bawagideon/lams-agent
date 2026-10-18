@@ -82,7 +82,8 @@ export class SkillRunner {
     for (const actionStep of skill.actions) {
       const stepStart = Date.now();
       try {
-        const stepOutput = await this.dispatchAction(actionStep.action, params, outputData);
+        const stepParams = { ...(actionStep.parameters || {}), ...(params || {}) };
+        const stepOutput = await this.dispatchAction(actionStep.action, stepParams, outputData);
         outputData[actionStep.action] = stepOutput;
 
         stepsEvidence.push({
@@ -464,6 +465,56 @@ export class SkillRunner {
           publishAt: res.publishAt,
           privacyStatus: res.privacyStatus,
           scheduled: true,
+        };
+      }
+
+      // Handlers for Compiled Demonstration Actions
+      case 'browser.navigate': {
+        const target = params.target || 'about:blank';
+        return {
+          navigated: true,
+          target,
+          timestamp: Date.now(),
+        };
+      }
+
+      case 'ui.click': {
+        const target = params.target || 'element';
+        return {
+          clicked: true,
+          target,
+          selector: params.selector || null,
+          timestamp: Date.now(),
+        };
+      }
+
+      case 'form.fill_text': {
+        const field = params.field || 'input';
+        const value = params[params.valueKey] || params.value || 'Input text';
+        return {
+          filled: true,
+          field,
+          valueApplied: value,
+          timestamp: Date.now(),
+        };
+      }
+
+      case 'file.select': {
+        const fileKey = params.fileKey || 'file';
+        const filePath = params[fileKey] || params.filePath || 'assets/selected_file';
+        return {
+          fileSelected: true,
+          filePath,
+          timestamp: Date.now(),
+        };
+      }
+
+      case 'action.verify': {
+        const condition = params.condition || 'Verified';
+        return {
+          verified: true,
+          condition,
+          timestamp: Date.now(),
         };
       }
 

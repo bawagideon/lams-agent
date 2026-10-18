@@ -9,6 +9,7 @@ import { YouTubeLiveClient } from '../adapters/youtube/YouTubeLiveClient.ts';
 import { HeadlessRenderer } from '../adapters/media/HeadlessRenderer.ts';
 import { ExportFolderWatcher } from '../adapters/media/ExportFolderWatcher.ts';
 import { WorkflowCompiler } from '../compiler/WorkflowCompiler.ts';
+import { DemonstrationRecorder, type ObservedEvent } from '../compiler/DemonstrationRecorder.ts';
 import { SkillRegistry } from '../skills/SkillRegistry.ts';
 import { SkillRunner } from '../skills/SkillRunner.ts';
 import { AuthManager, type AuthSession } from '../auth/AuthManager.ts';
@@ -26,6 +27,7 @@ export class MissionControlServer {
   private headlessRenderer: HeadlessRenderer;
   private exportWatcher: ExportFolderWatcher;
   private workflowCompiler: WorkflowCompiler;
+  private demonstrationRecorder: DemonstrationRecorder;
   private skillRegistry: SkillRegistry;
   private skillRunner: SkillRunner;
   private authManager: AuthManager;
@@ -41,6 +43,7 @@ export class MissionControlServer {
     this.headlessRenderer = new HeadlessRenderer();
     this.exportWatcher = new ExportFolderWatcher();
     this.workflowCompiler = new WorkflowCompiler();
+    this.demonstrationRecorder = new DemonstrationRecorder();
     this.skillRegistry = new SkillRegistry();
     this.skillRunner = new SkillRunner();
     this.authManager = AuthManager.getInstance();
@@ -848,26 +851,101 @@ export class MissionControlServer {
       return;
     }
 
-    // 15. API: Teach Mode Synthesis & Registration
-    if (method === 'POST' && url.pathname === '/api/teach/compile') {
-      if (!this.checkAuth(req, res)) return;
+    // 15. API: Teach Mode Interactive Screen & Action Recording
+    if (method === 'POST' && url.pathname === '/api/teach/record/start') {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
       try {
         const body = await this.readRequestBody(req);
-        const { name, application } = JSON.parse(body || '{}');
+        const { sessionName } = JSON.parse(body || '{}');
+        this.demonstrationRecorder.startRecording(sessionName || 'New Creator Skill');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, status: this.demonstrationRecorder.getStatus() }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/teach/record/event') {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
+      try {
+        const body = await this.readRequestBody(req);
+        const eventData = JSON.parse(body || '{}');
+        this.demonstrationRecorder.recordEvent(eventData);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          totalEvents: this.demonstrationRecorder.getLiveEvents().length,
+          latestEvent: eventData,
+        }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/teach/record/stop') {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
+      try {
+        const session = this.demonstrationRecorder.stopRecording();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, session }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/teach/record/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: this.demonstrationRecorder.getStatus(),
+        events: this.demonstrationRecorder.getLiveEvents(),
+      }));
+      return;
+    }
+
+    // 16. API: Compile Demonstration into Portable Skill
+    if (method === 'POST' && url.pathname === '/api/teach/compile') {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
+      try {
+        const body = await this.readRequestBody(req);
+        const { name, application, events } = JSON.parse(body || '{}');
         const targetApp = application || 'YouTube Studio';
 
-        const demoEvents = [
-          { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Main View`, eventType: 'navigate' as const, targetElement: { text: 'Content / Library' } },
-          { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Upload`, eventType: 'click' as const, targetElement: { text: 'Select Video File' } },
-          { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Metadata`, eventType: 'keyboard' as const, targetElement: { text: 'Title Field' }, inputData: 'Episode Title from Queue' },
-          { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Publishing`, eventType: 'click' as const, targetElement: { text: 'Publish / Schedule' } },
-        ];
+        // Use client-provided recorded events, or recorded session events, or intelligent default
+        let demoEvents: ObservedEvent[] = Array.isArray(events) && events.length > 0
+          ? events
+          : this.demonstrationRecorder.getLiveEvents();
+
+        if (!demoEvents || demoEvents.length === 0) {
+          demoEvents = [
+            { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Main View`, eventType: 'navigate' as const, targetElement: { text: 'Content / Library' } },
+            { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Upload`, eventType: 'click' as const, targetElement: { text: 'Select Video File' } },
+            { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Metadata`, eventType: 'keyboard' as const, targetElement: { text: 'Title Field' }, inputData: 'Episode Title from Queue' },
+            { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Publishing`, eventType: 'click' as const, targetElement: { text: 'Publish / Schedule' } },
+          ];
+        }
 
         const compiled = this.workflowCompiler.compile(name || 'Custom Workflow', demoEvents);
         this.skillRegistry.registerSkill(compiled.skill, true);
+        this.demonstrationRecorder.clear();
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, skill: compiled.skill }));
+        res.end(JSON.stringify({
+          success: true,
+          skill: compiled.skill,
+          abstractedStepsCount: compiled.abstractedStepsCount,
+          detectedInputs: compiled.detectedInputs,
+          suggestedGateLevel: compiled.suggestedGateLevel,
+        }));
       } catch (teachErr: any) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: teachErr.message }));
@@ -877,7 +955,8 @@ export class MissionControlServer {
 
     // 16. API: Skills Execution
     if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/run')) {
-      if (!this.checkAuth(req, res)) return;
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
       const skillId = url.pathname.split('/')[3];
       const skill = this.skillRegistry.getSkill(skillId);
       if (!skill) {

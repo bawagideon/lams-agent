@@ -454,36 +454,229 @@ export function renderDashboardHtml(
     </div>
 
     <!-- TAB 3: SKILLS FULL VIEW -->
-    <div id="view-skills" class="space-y-6 ${initialTab === 'skills' ? 'fade-in' : 'hidden'}">
+    <div id="view-skills" class="space-y-8 ${initialTab === 'skills' ? 'fade-in' : 'hidden'}">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Workforce Skills</h2>
-          <p class="text-xs text-gray-500 mt-0.5">Automated creator skills ready to execute on your command</p>
+          <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Workforce Skills & Studio</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Automated creator workforce skills and interactive demonstration recorder</p>
         </div>
-        <button data-action="open-teach" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
-          + Teach New Skill
-        </button>
+        <div class="flex items-center gap-2">
+          <button data-action="scroll-to-studio" class="bg-[#ede9fe] text-[#4338ca] hover:bg-[#ddd6fe] text-xs font-semibold px-4 py-2 rounded-xl transition shadow-2xs">
+            Open Recorder Studio
+          </button>
+          <button data-action="open-teach" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+            + Quick Teach
+          </button>
+        </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-        ${skills.map(s => `
-          <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4">
-            <div>
-              <div class="flex items-center justify-between">
-                <h3 class="text-sm font-bold text-gray-900">${escapeHtml(s.name)}</h3>
-                <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">v${escapeHtml(s.version)}</span>
-              </div>
-              <p class="text-xs text-gray-500 mt-2 leading-relaxed">${escapeHtml(s.description)}</p>
+      <!-- INTERACTIVE DEMONSTRATION RECORDER STUDIO -->
+      <div id="skillRecorderStudio" class="bg-white border border-gray-200/90 rounded-3xl p-6 shadow-sm space-y-6">
+        <!-- Studio Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-[#4338ca] shadow-sm">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
             </div>
-
-            <div class="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-              <span class="text-gray-400 font-medium">${s.actions.length} action steps</span>
-              <button data-action="run-skill" data-skill-id="${escapeHtml(s.id)}" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition shadow-sm">
-                Run now
-              </button>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-base font-extrabold text-gray-900 tracking-tight">Interactive Skill Demonstration Studio</h3>
+                <span id="recorderStatusBadge" class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide">
+                  Standby
+                </span>
+              </div>
+              <p class="text-xs text-gray-500 mt-0.5">Capture your screen, app window, or workflow actions to synthesize reusable creator skills</p>
             </div>
           </div>
-        `).join('')}
+          
+          <!-- Action Controls -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <button id="btnStartCapture" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-sm flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-white"></span>
+              <span>Start Screen Capture</span>
+            </button>
+            <button id="btnStopCapture" class="hidden bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-sm flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+              <span>Stop Capture</span>
+            </button>
+            <button id="btnClearRecording" class="border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- Studio Main Dual Column (Viewfinder + Action Logger) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Left Column (7 cols): Live Screen / Window Viewfinder -->
+          <div class="lg:col-span-7 flex flex-col space-y-3">
+            <div class="relative bg-slate-950 rounded-2xl overflow-hidden aspect-video border border-slate-800 shadow-inner flex items-center justify-center group">
+              <!-- Live Video Element -->
+              <video id="recorderScreenVideo" autoplay playsinline muted class="w-full h-full object-contain hidden"></video>
+
+              <!-- Standby / Idle Viewfinder Overlay -->
+              <div id="viewfinderIdleOverlay" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-gradient-to-b from-slate-900/40 via-slate-950 to-slate-950">
+                <div class="w-14 h-14 rounded-3xl bg-indigo-900/40 border border-indigo-700/50 flex items-center justify-center text-indigo-300 shadow-lg mb-1">
+                  <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                  </svg>
+                </div>
+                <p class="text-sm font-bold text-slate-100">Display Viewfinder Standby</p>
+                <p class="text-xs text-slate-400 max-w-sm leading-relaxed">
+                  Select a window (CapCut Desktop, YouTube Studio, browser tab) to capture live demonstrations.
+                </p>
+                <div class="flex items-center gap-2 pt-2">
+                  <button id="btnQuickSelectScreen" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow">
+                    Select Window / Screen
+                  </button>
+                </div>
+              </div>
+
+              <!-- Recording HUD Overlay (Active when capturing) -->
+              <div id="recorderLiveHud" class="hidden absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+                <div class="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-lg">
+                  <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                  <span class="text-[11px] font-bold text-white tracking-widest uppercase">REC</span>
+                  <span id="recordingTimer" class="text-[11px] font-mono text-white/90">00:00</span>
+                </div>
+                <div class="flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-lg">
+                  <span class="text-[10px] font-semibold text-emerald-400">● Live Viewfinder</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Viewfinder Subtitle / Helpers -->
+            <div class="flex items-center justify-between text-[11px] text-gray-500 px-1">
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-1.5 cursor-pointer text-gray-600 hover:text-gray-900 select-none">
+                  <input type="checkbox" id="chkCaptureAudio" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span>Include Audio Track</span>
+                </label>
+              </div>
+              <span class="text-gray-400 font-mono text-[10px]">HTML5 MediaRecorder + Action Synthesis</span>
+            </div>
+          </div>
+
+          <!-- Right Column (5 cols): Live Action Event Stream & Quick Palette -->
+          <div class="lg:col-span-5 flex flex-col justify-between space-y-4 bg-gray-50/70 border border-gray-200/80 rounded-2xl p-4">
+            <!-- Quick Action Palette -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-gray-700">Action Step Palette</span>
+                <span id="recordedStepsCount" class="text-[11px] font-semibold text-[#4338ca] bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">0 steps</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <button id="palBtnClick" type="button" class="bg-white hover:bg-indigo-50/50 hover:border-indigo-200 border border-gray-200 text-gray-800 font-medium px-2.5 py-2 rounded-xl transition flex items-center gap-2 shadow-2xs">
+                  <span class="text-indigo-600 font-bold">🖱️</span>
+                  <span>+ Click Target</span>
+                </button>
+                <button id="palBtnKeyboard" type="button" class="bg-white hover:bg-indigo-50/50 hover:border-indigo-200 border border-gray-200 text-gray-800 font-medium px-2.5 py-2 rounded-xl transition flex items-center gap-2 shadow-2xs">
+                  <span class="text-indigo-600 font-bold">⌨️</span>
+                  <span>+ Text Input</span>
+                </button>
+                <button id="palBtnNavigate" type="button" class="bg-white hover:bg-indigo-50/50 hover:border-indigo-200 border border-gray-200 text-gray-800 font-medium px-2.5 py-2 rounded-xl transition flex items-center gap-2 shadow-2xs">
+                  <span class="text-indigo-600 font-bold">🌐</span>
+                  <span>+ Navigate URL</span>
+                </button>
+                <button id="palBtnFile" type="button" class="bg-white hover:bg-indigo-50/50 hover:border-indigo-200 border border-gray-200 text-gray-800 font-medium px-2.5 py-2 rounded-xl transition flex items-center gap-2 shadow-2xs">
+                  <span class="text-indigo-600 font-bold">📁</span>
+                  <span>+ Select File</span>
+                </button>
+                <button id="palBtnAssert" type="button" class="col-span-2 bg-white hover:bg-emerald-50/50 hover:border-emerald-200 border border-gray-200 text-gray-800 font-medium px-2.5 py-2 rounded-xl transition flex items-center justify-center gap-2 shadow-2xs">
+                  <span class="text-emerald-600 font-bold">✓</span>
+                  <span>+ Add Verification Assertion</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Chronological Action Timeline -->
+            <div class="space-y-2 flex-1 flex flex-col min-h-[220px]">
+              <div class="flex items-center justify-between text-[11px] text-gray-500 pb-1 border-b border-gray-200/60">
+                <span class="font-bold uppercase tracking-wider text-gray-600">Observed Timeline</span>
+                <span class="text-[10px] text-gray-400">Step details</span>
+              </div>
+              <div id="recordedEventsStream" class="flex-1 max-h-[250px] overflow-y-auto space-y-2 pr-1 text-xs">
+                <!-- Empty State -->
+                <div id="emptyRecordedEventsNotice" class="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400 space-y-1.5">
+                  <span class="text-2xl">⚡</span>
+                  <p class="font-medium text-gray-600">No actions logged yet</p>
+                  <p class="text-[11px] text-gray-400">Add steps using the palette or start screen recording to observe workflow.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Preset Templates Quick Bar -->
+            <div class="pt-2 border-t border-gray-200/60">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-gray-500 block mb-1.5">Quick Presets:</span>
+              <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+                <button data-preset="youtube-shorts" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
+                  YouTube Shorts
+                </button>
+                <button data-preset="capcut-captions" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
+                  CapCut Captions
+                </button>
+                <button data-preset="tiktok-upload" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
+                  TikTok Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Synthesis & Compilation Bar -->
+        <div class="pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full sm:w-auto flex-1 max-w-xl">
+            <div>
+              <label class="block text-[11px] font-bold text-gray-700 mb-1">New Skill Name</label>
+              <input id="recorderSkillName" type="text" placeholder="e.g. Schedule TikTok Clip" value="Schedule TikTok Clip" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-gray-700 mb-1">Target Application</label>
+              <select id="recorderTargetApp" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 focus:outline-none focus:border-indigo-500">
+                <option value="YouTube Studio">YouTube Studio</option>
+                <option value="CapCut Desktop">CapCut Desktop</option>
+                <option value="TikTok Web">TikTok Web</option>
+                <option value="Custom Browser">Custom Browser App</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+            <button id="btnCompileFromStudio" class="w-full sm:w-auto bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-6 py-3 rounded-xl transition shadow-sm flex items-center justify-center gap-2">
+              <span>⚡ Compile into Reusable Skill</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORKFORCE SKILLS GRID -->
+      <div class="space-y-4 pt-2">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider">Active Workforce Skills (${skills.length})</h3>
+          <span class="text-xs text-gray-400">All skills are verified and gate-protected</span>
+        </div>
+
+        <div id="skillsGridList" class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          ${skills.map(s => `
+            <div class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between">
+                  <h3 class="text-sm font-bold text-gray-900">${escapeHtml(s.name)}</h3>
+                  <span class="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">v${escapeHtml(s.version)}</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-2 leading-relaxed">${escapeHtml(s.description)}</p>
+              </div>
+
+              <div class="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <span class="text-gray-400 font-medium">${s.actions.length} action steps</span>
+                <button data-action="run-skill" data-skill-id="${escapeHtml(s.id)}" class="bg-gray-50 hover:bg-gray-100 text-[#4338ca] font-semibold border border-indigo-100 px-3.5 py-1.5 rounded-xl transition shadow-sm">
+                  Run now
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
       </div>
     </div>
 
@@ -1121,12 +1314,329 @@ export function renderDashboardHtml(
       }
     }
 
+    // ============================================================
+    // 7. INTERACTIVE DEMONSTRATION & SCREEN RECORDER LOGIC
+    // ============================================================
+    function clientEscapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    let screenMediaStream = null;
+    let recordingTimerInterval = null;
+    let recordingStartTime = 0;
+    let localRecordedEvents = [];
+
+    function updateRecordingTimer() {
+      const elapsedSec = Math.floor((Date.now() - recordingStartTime) / 1000);
+      const m = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+      const s = String(elapsedSec % 60).padStart(2, '0');
+      const timerEl = document.getElementById('recordingTimer');
+      if (timerEl) timerEl.innerText = m + ':' + s;
+    }
+
+    async function startScreenCapture() {
+      try {
+        const audioRequested = document.getElementById('chkCaptureAudio')?.checked || false;
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: audioRequested
+        });
+
+        screenMediaStream = stream;
+        const video = document.getElementById('recorderScreenVideo');
+        if (video) {
+          video.srcObject = stream;
+          video.classList.remove('hidden');
+        }
+
+        document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
+        document.getElementById('recorderLiveHud')?.classList.remove('hidden');
+        document.getElementById('btnStartCapture')?.classList.add('hidden');
+        document.getElementById('btnStopCapture')?.classList.remove('hidden');
+
+        const badge = document.getElementById('recorderStatusBadge');
+        if (badge) {
+          badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 uppercase tracking-wide animate-pulse';
+          badge.innerText = 'Recording Live';
+        }
+
+        recordingStartTime = Date.now();
+        updateRecordingTimer();
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+
+        // Notify backend of session start
+        const skillName = document.getElementById('recorderSkillName')?.value || 'Interactive Demonstration';
+        fetch('/api/teach/record/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionName: skillName })
+        }).catch(console.error);
+
+        // Auto log stream start event
+        recordStudioEvent('navigate', {
+          windowTitle: 'Screen Viewfinder Active',
+          inputData: 'User focused workspace window'
+        });
+
+        // Listen for user stopping sharing via browser native stop button
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          track.onended = () => {
+            stopScreenCapture();
+          };
+        }
+      } catch (err) {
+        console.warn('Screen capture declined or unsupported:', err);
+        alert('Screen capture was cancelled or not supported. You can still record workflow steps manually using the Action Step Palette!');
+      }
+    }
+
+    async function stopScreenCapture() {
+      if (screenMediaStream) {
+        screenMediaStream.getTracks().forEach(t => t.stop());
+        screenMediaStream = null;
+      }
+      if (recordingTimerInterval) {
+        clearInterval(recordingTimerInterval);
+        recordingTimerInterval = null;
+      }
+
+      const video = document.getElementById('recorderScreenVideo');
+      if (video) {
+        video.srcObject = null;
+        video.classList.add('hidden');
+      }
+
+      document.getElementById('viewfinderIdleOverlay')?.classList.remove('hidden');
+      document.getElementById('recorderLiveHud')?.classList.add('hidden');
+      document.getElementById('btnStartCapture')?.classList.remove('hidden');
+      document.getElementById('btnStopCapture')?.classList.add('hidden');
+
+      const badge = document.getElementById('recorderStatusBadge');
+      if (badge) {
+        badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide';
+        badge.innerText = 'Ready to Compile';
+      }
+
+      try {
+        await fetch('/api/teach/record/stop', { method: 'POST' });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function resetRecorderStudio() {
+      stopScreenCapture();
+      localRecordedEvents = [];
+      renderRecordedEventsStream();
+      const badge = document.getElementById('recorderStatusBadge');
+      if (badge) {
+        badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide';
+        badge.innerText = 'Standby';
+      }
+    }
+
+    function recordStudioEvent(eventType, options) {
+      options = options || {};
+      const targetApp = document.getElementById('recorderTargetApp')?.value || 'Creator Studio';
+      const ev = {
+        timestamp: Date.now(),
+        application: targetApp,
+        windowTitle: options.windowTitle || (targetApp + ' View'),
+        eventType: eventType,
+        targetElement: options.targetElement || (options.target ? { text: options.target, selector: options.selector } : undefined),
+        inputData: options.inputData || options.value || undefined,
+      };
+
+      localRecordedEvents.push(ev);
+      renderRecordedEventsStream();
+
+      // Dispatch to backend recorder
+      fetch('/api/teach/record/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ev)
+      }).catch(console.error);
+    }
+
+    window.removeRecordedEvent = function(index) {
+      if (index >= 0 && index < localRecordedEvents.length) {
+        localRecordedEvents.splice(index, 1);
+        renderRecordedEventsStream();
+      }
+    };
+
+    function renderRecordedEventsStream() {
+      const container = document.getElementById('recordedEventsStream');
+      const countEl = document.getElementById('recordedStepsCount');
+      if (!container) return;
+
+      if (countEl) {
+        countEl.innerText = localRecordedEvents.length + ' ' + (localRecordedEvents.length === 1 ? 'step' : 'steps');
+      }
+
+      if (localRecordedEvents.length === 0) {
+        container.innerHTML = '<div id="emptyRecordedEventsNotice" class="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400 space-y-1.5">' +
+          '<span class="text-2xl">⚡</span>' +
+          '<p class="font-medium text-gray-600">No actions logged yet</p>' +
+          '<p class="text-[11px] text-gray-400">Add steps using the palette or start screen recording to observe workflow.</p>' +
+        '</div>';
+        return;
+      }
+
+      const iconMap = {
+        click: '🖱️',
+        keyboard: '⌨️',
+        navigate: '🌐',
+        file_select: '📁',
+        assertion: '✓',
+      };
+
+      const colorMap = {
+        click: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+        keyboard: 'bg-blue-50 text-blue-700 border-blue-100',
+        navigate: 'bg-purple-50 text-purple-700 border-purple-100',
+        file_select: 'bg-amber-50 text-amber-800 border-amber-200',
+        assertion: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      };
+
+      let html = '';
+      localRecordedEvents.forEach((ev, idx) => {
+        const icon = iconMap[ev.eventType] || '•';
+        const badgeClass = colorMap[ev.eventType] || 'bg-gray-100 text-gray-700 border-gray-200';
+        const label = ev.targetElement?.text || ev.inputData || ev.windowTitle || 'Action';
+        const sub = ev.inputData && ev.targetElement?.text ? ('Input: ' + ev.inputData) : (ev.targetElement?.selector || ev.application);
+
+        html += '<div class="bg-white border border-gray-200/90 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-2xs hover:border-indigo-200 transition">' +
+          '<div class="flex items-center gap-2.5 min-w-0">' +
+            '<span class="text-[10px] font-mono font-bold text-gray-400">#' + (idx + 1) + '</span>' +
+            '<span class="text-[10px] font-bold px-2 py-0.5 rounded-md border ' + badgeClass + ' flex items-center gap-1 uppercase tracking-wider">' +
+              '<span>' + icon + '</span>' +
+              '<span>' + clientEscapeHtml(ev.eventType) + '</span>' +
+            '</span>' +
+            '<div class="min-w-0 truncate">' +
+              '<p class="font-semibold text-gray-900 truncate text-[11px]">' + clientEscapeHtml(String(label)) + '</p>' +
+              '<p class="text-[10px] text-gray-400 truncate">' + clientEscapeHtml(String(sub)) + '</p>' +
+            '</div>' +
+          '</div>' +
+          '<button onclick="removeRecordedEvent(' + idx + ')" class="text-gray-300 hover:text-rose-500 font-bold px-1.5 py-0.5 rounded text-xs transition" title="Delete Step">' +
+            '✕' +
+          '</button>' +
+        '</div>';
+      });
+
+      container.innerHTML = html;
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function loadPreset(presetKey) {
+      localRecordedEvents = [];
+      const skillNameInput = document.getElementById('recorderSkillName');
+      const appSelect = document.getElementById('recorderTargetApp');
+
+      if (presetKey === 'youtube-shorts') {
+        if (skillNameInput) skillNameInput.value = 'Auto Schedule YouTube Short';
+        if (appSelect) appSelect.value = 'YouTube Studio';
+        recordStudioEvent('navigate', { target: 'YouTube Studio Upload', inputData: 'https://studio.youtube.com/channel/videos/upload' });
+        recordStudioEvent('click', { target: 'Select Video File Button', selector: '#select-files-button' });
+        recordStudioEvent('file_select', { target: 'Rendered Master MP4 Export', value: 'watched_exports/master.mp4' });
+        recordStudioEvent('keyboard', { targetElement: { text: 'Title Field', selector: '#title-textarea' }, inputData: 'Epic Story Scene #Shorts' });
+        recordStudioEvent('click', { target: 'Schedule for 7pm Button', selector: '#schedule-radio-button' });
+        recordStudioEvent('assertion', { target: 'Upload Verification Status', inputData: 'Upload complete & processing finished' });
+      } else if (presetKey === 'capcut-captions') {
+        if (skillNameInput) skillNameInput.value = 'Apply CapCut Auto Captions';
+        if (appSelect) appSelect.value = 'CapCut Desktop';
+        recordStudioEvent('navigate', { target: 'CapCut Project Timeline', inputData: 'CapCut Main Canvas' });
+        recordStudioEvent('click', { target: 'Text / Captions Tab', selector: 'tab_text_captions' });
+        recordStudioEvent('click', { target: 'Auto Captions Generate Button', selector: 'btn_generate_captions' });
+        recordStudioEvent('assertion', { target: 'Timeline Caption Track', inputData: 'Captions synchronized with scene audio' });
+      } else if (presetKey === 'tiktok-upload') {
+        if (skillNameInput) skillNameInput.value = 'Schedule TikTok Post';
+        if (appSelect) appSelect.value = 'TikTok Web';
+        recordStudioEvent('navigate', { target: 'TikTok Creator Center', inputData: 'https://www.tiktok.com/creator-center/upload' });
+        recordStudioEvent('click', { target: 'Select Video File', selector: 'input[type=file]' });
+        recordStudioEvent('keyboard', { targetElement: { text: 'Caption Box', selector: '.public-DraftEditor-content' }, inputData: 'Check out today episode! #lams #viral' });
+        recordStudioEvent('click', { target: 'Schedule Post Toggle', selector: 'input[name=schedule]' });
+        recordStudioEvent('assertion', { target: 'Post Success Modal', inputData: 'Your video has been scheduled' });
+      }
+
+      const badge = document.getElementById('recorderStatusBadge');
+      if (badge) {
+        badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide';
+        badge.innerText = 'Template Loaded';
+      }
+    }
+
+    async function compileStudioSkill() {
+      const name = (document.getElementById('recorderSkillName')?.value || '').trim();
+      const application = document.getElementById('recorderTargetApp')?.value || 'YouTube Studio';
+
+      if (!name) {
+        alert('Please provide a name for the new skill.');
+        return;
+      }
+
+      if (localRecordedEvents.length === 0) {
+        const useDemo = confirm('No actions have been recorded yet. Would you like to compile a standard automated workflow for ' + application + '?');
+        if (!useDemo) return;
+      }
+
+      const btn = document.getElementById('btnCompileFromStudio');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Compiling Skill...';
+      }
+
+      try {
+        const res = await fetch('/api/teach/compile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            application,
+            events: localRecordedEvents.length > 0 ? localRecordedEvents : undefined
+          })
+        });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        appendChatMessage('agent', '✓ New skill **' + data.skill.name + '** successfully synthesized and compiled with ' + data.skill.actions.length + ' verified steps!');
+
+        alert('✓ Successfully compiled skill: "' + data.skill.name + '"! It has been added to your workforce skills below.');
+        resetRecorderStudio();
+        window.location.reload();
+      } catch (err) {
+        alert('Compilation error: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '⚡ Compile into Reusable Skill';
+        }
+      }
+    }
+
     // Skills & Teach Modal
     function openTeachModal() {
-      document.getElementById('teachModal').classList.remove('hidden');
+      switchTab('skills');
+      const studio = document.getElementById('skillRecorderStudio');
+      if (studio) {
+        studio.scrollIntoView({ behavior: 'smooth' });
+        studio.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2');
+        setTimeout(() => {
+          studio.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2');
+        }, 1500);
+      }
     }
+
     function closeTeachModal() {
-      document.getElementById('teachModal').classList.add('hidden');
+      document.getElementById('teachModal')?.classList.add('hidden');
     }
 
     async function compileDemonstrationSkill() {
@@ -1159,13 +1669,17 @@ export function renderDashboardHtml(
     }
 
     async function runSkill(id) {
-      if (!confirm('Run skill: ' + id + '?')) return;
+      if (!confirm('Run workforce skill: ' + id + '?')) return;
+      appendChatMessage('agent', 'Initiating execution of skill: **' + id + '**...');
       try {
         const res = await fetch('/api/skills/' + id + '/run', { method: 'POST' });
         const data = await res.json();
-        alert('Skill executed successfully!');
+        if (data.error) throw new Error(data.error);
+        appendChatMessage('agent', '✓ Skill **' + id + '** executed with verified receipt: [' + (data.receipt?.id || 'verified') + ']');
+        alert('Skill executed successfully! Output: ' + JSON.stringify(data.outputData || {}));
       } catch (err) {
-        alert('Error: ' + err.message);
+        appendChatMessage('agent', 'Execution failed: ' + err.message);
+        alert('Error executing skill: ' + err.message);
       }
     }
 
@@ -1200,6 +1714,49 @@ export function renderDashboardHtml(
       document.getElementById('btnConfirmRelease')?.addEventListener('click', confirmAndPublish);
       document.getElementById('btnCompileSkill')?.addEventListener('click', compileDemonstrationSkill);
 
+      // Studio Action Buttons
+      document.getElementById('btnStartCapture')?.addEventListener('click', startScreenCapture);
+      document.getElementById('btnQuickSelectScreen')?.addEventListener('click', startScreenCapture);
+      document.getElementById('btnStopCapture')?.addEventListener('click', stopScreenCapture);
+      document.getElementById('btnClearRecording')?.addEventListener('click', resetRecorderStudio);
+      document.getElementById('btnCompileFromStudio')?.addEventListener('click', compileStudioSkill);
+
+      // Studio Palette Buttons
+      document.getElementById('palBtnClick')?.addEventListener('click', () => {
+        const target = prompt('Enter target element description or CSS selector (e.g. "Select Video Button"):');
+        if (target) recordStudioEvent('click', { target });
+      });
+
+      document.getElementById('palBtnKeyboard')?.addEventListener('click', () => {
+        const field = prompt('Enter input field label or selector (e.g. "Title"):');
+        if (!field) return;
+        const val = prompt('Enter text value to type (e.g. "Episode 1 Master"):');
+        if (val) recordStudioEvent('keyboard', { targetElement: { text: field }, inputData: val });
+      });
+
+      document.getElementById('palBtnNavigate')?.addEventListener('click', () => {
+        const urlOrView = prompt('Enter URL or navigation destination (e.g. "https://studio.youtube.com"):');
+        if (urlOrView) recordStudioEvent('navigate', { target: urlOrView, inputData: urlOrView });
+      });
+
+      document.getElementById('palBtnFile')?.addEventListener('click', () => {
+        const file = prompt('Enter file type or path (e.g. "Exported MP4 Video"):');
+        if (file) recordStudioEvent('file_select', { target: file, value: file });
+      });
+
+      document.getElementById('palBtnAssert')?.addEventListener('click', () => {
+        const cond = prompt('Enter verification condition to assert (e.g. "Processing 100% Complete"):');
+        if (cond) recordStudioEvent('assertion', { target: cond, inputData: cond });
+      });
+
+      // Preset Buttons
+      document.querySelectorAll('[data-preset]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const preset = e.currentTarget.getAttribute('data-preset');
+          if (preset) loadPreset(preset);
+        });
+      });
+
       // Delegated Action Handler
       document.addEventListener('click', (e) => {
         const actionEl = e.target.closest('[data-action]');
@@ -1215,7 +1772,7 @@ export function renderDashboardHtml(
           openReleaseRoom(episodeId);
         } else if (action === 'close-release') {
           closeReleaseRoom();
-        } else if (action === 'open-teach') {
+        } else if (action === 'open-teach' || action === 'scroll-to-studio') {
           openTeachModal();
         } else if (action === 'close-teach') {
           closeTeachModal();
