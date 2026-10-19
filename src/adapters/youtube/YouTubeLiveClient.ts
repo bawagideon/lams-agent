@@ -177,6 +177,45 @@ export class YouTubeLiveClient {
   }
 
   /**
+   * Verifies a manually provided refresh token against YouTube Data API and updates CredentialStore.
+   */
+  public async verifyAndSaveRefreshToken(
+    refreshToken: string,
+    customRedirectUri?: string
+  ): Promise<{ channelTitle: string; channelId: string; subscriberCount?: string }> {
+    const redirectUri = this.sanitizeRedirectUri(customRedirectUri);
+    const oauth2Client = new google.auth.OAuth2(
+      this.clientId,
+      this.clientSecret,
+      redirectUri
+    );
+    oauth2Client.setCredentials({ refresh_token: refreshToken.trim() });
+
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+    const res = await youtube.channels.list({
+      part: ['snippet', 'statistics'],
+      mine: true,
+    });
+
+    const channel = res.data?.items?.[0];
+    if (!channel) {
+      throw new Error('Authenticated Google account does not have an active YouTube channel.');
+    }
+
+    const channelTitle = channel.snippet?.title || 'Connected YouTube Channel';
+    const channelId = channel.id || 'Unknown';
+    const subscriberCount = channel.statistics?.subscriberCount || '0';
+
+    this.credentialStore.setYouTubeCredentials(refreshToken.trim(), channelId, channelTitle);
+
+    return {
+      channelTitle,
+      channelId,
+      subscriberCount,
+    };
+  }
+
+  /**
    * Queries real channel status from YouTube Data API v3
    */
   public async getChannelStatus(customRedirectUri?: string): Promise<ChannelProfile> {

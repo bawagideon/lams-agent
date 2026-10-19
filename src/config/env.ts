@@ -5,6 +5,7 @@ export interface AppConfig {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REFRESH_TOKEN: string;
+  GOOGLE_REDIRECT_URI?: string;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   GEMINI_API_KEY?: string;
@@ -34,13 +35,15 @@ function loadEnvFile(filePath: string): Record<string, string> {
   return result;
 }
 
-// 1. Try local .env, fallback to yt-automation/.env.local
+// 1. Try local .env.local, .env, fallback to yt-automation/.env.local
 const localEnvPath = path.resolve('.env');
+const localEnvLocalPath = path.resolve('.env.local');
 const parentEnvPath = 'c:/Users/DELL/yt-automation/.env.local';
 
 const mergedEnv = {
   ...loadEnvFile(parentEnvPath),
   ...loadEnvFile(localEnvPath),
+  ...loadEnvFile(localEnvLocalPath),
   ...process.env,
 };
 
@@ -48,6 +51,7 @@ export const config: AppConfig = {
   GOOGLE_CLIENT_ID: mergedEnv.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: mergedEnv.GOOGLE_CLIENT_SECRET || '',
   GOOGLE_REFRESH_TOKEN: mergedEnv.GOOGLE_REFRESH_TOKEN || '',
+  GOOGLE_REDIRECT_URI: mergedEnv.GOOGLE_REDIRECT_URI,
   SUPABASE_URL: mergedEnv.SUPABASE_URL || '',
   SUPABASE_SERVICE_ROLE_KEY: mergedEnv.SUPABASE_SERVICE_ROLE_KEY || '',
   GEMINI_API_KEY: mergedEnv.GEMINI_API_KEY,

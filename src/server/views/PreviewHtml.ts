@@ -254,7 +254,84 @@ export function renderPreviewHtml(
   </main>
 
   <!-- ============================================================ -->
-  <!-- 3. SAFE-MODE RELEASE ROOM MODAL                              -->
+  <!-- 3. STUDIO ACCESS KEY MODAL                                   -->
+  <!-- ============================================================ -->
+  <div id="studioKeyModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold">
+            🔑
+          </div>
+          <div>
+            <h3 class="text-base font-black text-gray-900">Studio Key Required</h3>
+            <p class="text-[11px] text-gray-500">Authorize CapCut & Render pipeline</p>
+          </div>
+        </div>
+        <button id="btnCloseKeyModal" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
+      </div>
+
+      <p id="studioKeyDescription" class="text-xs text-gray-600 leading-relaxed">
+        Desktop operations (CapCut draft assembly and FFmpeg rendering) require creator authorization. Enter your studio key or use dev mode.
+      </p>
+
+      <div class="space-y-2">
+        <label for="studioKeyInput" class="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">Creator Key / Password</label>
+        <div class="flex gap-2">
+          <input 
+            type="password" 
+            id="studioKeyInput" 
+            placeholder="Enter key or 'admin'" 
+            class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
+          />
+          <button id="btnDevKeyFill" type="button" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-3 py-2 rounded-xl border border-gray-200 transition">
+            Dev Key
+          </button>
+        </div>
+        <p id="studioKeyError" class="hidden text-xs text-red-600 font-medium pt-1"></p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-2">
+        <button id="btnCancelKeyModal" type="button" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Cancel
+        </button>
+        <button id="btnSubmitKeyModal" type="button" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+          Authorize & Continue
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 4. OPERATION RESULT MODAL (CapCut & FFmpeg)                  -->
+  <!-- ============================================================ -->
+  <div id="studioResultModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div id="studioResultIcon" class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-bold">
+            ✓
+          </div>
+          <div>
+            <h3 id="studioResultTitle" class="text-base font-black text-gray-900">Operation Complete</h3>
+            <p id="studioResultSubtitle" class="text-[11px] text-gray-500">Asset ready in studio</p>
+          </div>
+        </div>
+        <button id="btnCloseResultModal" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
+      </div>
+
+      <div id="studioResultBody" class="text-xs text-gray-600 space-y-3"></div>
+
+      <div id="studioResultActions" class="flex items-center justify-end gap-2.5 pt-2">
+        <button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 5. SAFE-MODE RELEASE ROOM MODAL                              -->
   <!-- ============================================================ -->
   <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-lg w-full p-7 shadow-2xl border border-gray-200 space-y-5">
@@ -294,6 +371,207 @@ export function renderPreviewHtml(
   <script>
     const episodeId = '${escapeHtml(episode.id)}';
     let currentApprovalToken = null;
+    let pendingAction = null;
+    let savedCsrfToken = null;
+
+    async function requestWithAuth(url, options = {}) {
+      const headers = options.headers || {};
+      if (savedCsrfToken) {
+        headers['x-csrf-token'] = savedCsrfToken;
+      }
+      options.headers = headers;
+      options.credentials = 'same-origin';
+      return await fetch(url, options);
+    }
+
+    function openKeyModal(desc, pending) {
+      if (pending) pendingAction = pending;
+      const modal = document.getElementById('studioKeyModal');
+      const descEl = document.getElementById('studioKeyDescription');
+      const errEl = document.getElementById('studioKeyError');
+      const input = document.getElementById('studioKeyInput');
+      if (descEl && desc) descEl.innerText = desc;
+      if (errEl) {
+        errEl.innerText = '';
+        errEl.classList.add('hidden');
+      }
+      if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 50);
+      }
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeKeyModal() {
+      const modal = document.getElementById('studioKeyModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function submitStudioKey() {
+      const input = document.getElementById('studioKeyInput');
+      const errEl = document.getElementById('studioKeyError');
+      const btn = document.getElementById('btnSubmitKeyModal');
+      const key = input ? input.value.trim() : '';
+      if (!key) {
+        if (errEl) {
+          errEl.innerText = 'Please enter your studio key or use Dev Key.';
+          errEl.classList.remove('hidden');
+        }
+        return;
+      }
+      if (btn) btn.innerText = 'Verifying...';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: key }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Invalid credentials. Please try again.');
+        }
+        savedCsrfToken = data.csrfToken;
+        closeKeyModal();
+        if (pendingAction) {
+          const act = pendingAction;
+          pendingAction = null;
+          if (act.type === 'capcut') {
+            await triggerCapCutDraft(act.id);
+          } else if (act.type === 'render') {
+            await triggerFfmpegRender(act.id);
+          }
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.innerText = err.message;
+          errEl.classList.remove('hidden');
+        }
+      } finally {
+        if (btn) btn.innerText = 'Authorize & Continue';
+      }
+    }
+
+    function showCapCutSuccessModal(data) {
+      const modal = document.getElementById('studioResultModal');
+      const title = document.getElementById('studioResultTitle');
+      const sub = document.getElementById('studioResultSubtitle');
+      const body = document.getElementById('studioResultBody');
+      const actions = document.getElementById('studioResultActions');
+
+      title.innerText = 'CapCut Draft Assembled!';
+      sub.innerText = 'Draft project generated with ' + (data.tracksCount || '4') + ' tracks';
+
+      const draftPath = data.draftPath || 'data/capcut_projects/...';
+      body.innerHTML = `
+        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+          <div class="flex items-center justify-between text-gray-500">
+            <span class="font-bold uppercase tracking-wider text-[10px]">Project Draft Location</span>
+            <button id="btnCopyDraftPath" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">
+              📋 Copy Path
+            </button>
+          </div>
+          <code id="draftPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">${draftPath}</code>
+        </div>
+        <div class="space-y-1.5 text-gray-600">
+          <p class="font-semibold text-gray-900">Next Steps in Desktop:</p>
+          <ol class="list-decimal list-inside space-y-1">
+            <li>Open <strong>CapCut Desktop</strong> on your computer.</li>
+            <li>The project is already in your CapCut project drafts list.</li>
+            <li>Review and polish cuts, animations, audio, and subtitles.</li>
+          </ol>
+        </div>
+      `;
+
+      actions.innerHTML = `
+        <button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Close
+        </button>
+        <button id="btnTriggerRenderFromCapcut" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+          ⚡ Render Video Now
+        </button>
+      `;
+
+      modal.classList.remove('hidden');
+
+      document.getElementById('btnCopyDraftPath')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(draftPath).then(() => {
+          const btn = document.getElementById('btnCopyDraftPath');
+          if (btn) btn.innerText = '✓ Copied!';
+          setTimeout(() => {
+            const b = document.getElementById('btnCopyDraftPath');
+            if (b) b.innerText = '📋 Copy Path';
+          }, 2000);
+        });
+      });
+
+      document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
+        modal.classList.add('hidden');
+      });
+
+      document.getElementById('btnTriggerRenderFromCapcut')?.addEventListener('click', () => {
+        modal.classList.add('hidden');
+        triggerFfmpegRender(episodeId);
+      });
+    }
+
+    function showRenderSuccessModal(data) {
+      const modal = document.getElementById('studioResultModal');
+      const title = document.getElementById('studioResultTitle');
+      const sub = document.getElementById('studioResultSubtitle');
+      const body = document.getElementById('studioResultBody');
+      const actions = document.getElementById('studioResultActions');
+
+      title.innerText = 'Master Video Rendered!';
+      sub.innerText = 'FFmpeg render pipeline completed successfully';
+
+      const outPath = data.outputPath || 'data/renders/...';
+      body.innerHTML = `
+        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+          <div class="flex items-center justify-between text-gray-500">
+            <span class="font-bold uppercase tracking-wider text-[10px]">Rendered Output File</span>
+            <button id="btnCopyRenderPath" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">
+              📋 Copy Path
+            </button>
+          </div>
+          <code id="renderPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">${outPath}</code>
+        </div>
+        <p class="text-gray-600">
+          Your master video has been rendered and saved. You can preview it in the player or proceed to the Safe-Mode Release Room.
+        </p>
+      `;
+
+      actions.innerHTML = `
+        <button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Close
+        </button>
+        <button id="btnOpenReleaseAfterRender" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+          🚀 Open Release Room
+        </button>
+      `;
+
+      modal.classList.remove('hidden');
+
+      document.getElementById('btnCopyRenderPath')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(outPath).then(() => {
+          const btn = document.getElementById('btnCopyRenderPath');
+          if (btn) btn.innerText = '✓ Copied!';
+          setTimeout(() => {
+            const b = document.getElementById('btnCopyRenderPath');
+            if (b) b.innerText = '📋 Copy Path';
+          }, 2000);
+        });
+      });
+
+      document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
+        modal.classList.add('hidden');
+        window.location.reload();
+      });
+
+      document.getElementById('btnOpenReleaseAfterRender')?.addEventListener('click', () => {
+        modal.classList.add('hidden');
+        openReleaseRoom(episodeId);
+      });
+    }
 
     function playScene(url, sceneNum, title, sceneId, prompt) {
       const player = document.getElementById('mainVideoPlayer');
@@ -354,12 +632,16 @@ export function renderPreviewHtml(
         btn.disabled = true;
       }
       try {
-        const res = await fetch('/api/episodes/' + id + '/capcut', { method: 'POST' });
+        const res = await requestWithAuth('/api/episodes/' + id + '/capcut', { method: 'POST' });
+        if (res.status === 401) {
+          openKeyModal('CapCut draft generation requires creator authorization.', { type: 'capcut', id });
+          return;
+        }
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        alert('✓ CapCut Draft Created!\\nLocation: ' + (data.draftPath || 'Queued') + '\\nOpen CapCut Desktop to see your timeline.');
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to assemble CapCut draft');
+        showCapCutSuccessModal(data);
       } catch (err) {
-        alert('Error: ' + err.message);
+        alert('CapCut Error: ' + err.message);
       } finally {
         if (btn) {
           btn.innerText = '✂️ Open in CapCut';
@@ -375,11 +657,14 @@ export function renderPreviewHtml(
         btn.disabled = true;
       }
       try {
-        const res = await fetch('/api/episodes/' + id + '/render', { method: 'POST' });
+        const res = await requestWithAuth('/api/episodes/' + id + '/render', { method: 'POST' });
+        if (res.status === 401) {
+          openKeyModal('FFmpeg master rendering requires creator authorization.', { type: 'render', id });
+          return;
+        }
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        alert('✓ Master Video Rendered!\\nSaved to: ' + data.outputPath);
-        window.location.reload();
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to render master video');
+        showRenderSuccessModal(data);
       } catch (err) {
         alert('Render Error: ' + err.message);
       } finally {
@@ -510,6 +795,27 @@ export function renderPreviewHtml(
       });
 
       document.getElementById('btnConfirmRelease')?.addEventListener('click', confirmAndPublish);
+
+      // Studio Access Key Modal listeners
+      document.getElementById('btnCloseKeyModal')?.addEventListener('click', closeKeyModal);
+      document.getElementById('btnCancelKeyModal')?.addEventListener('click', closeKeyModal);
+      document.getElementById('btnSubmitKeyModal')?.addEventListener('click', submitStudioKey);
+      document.getElementById('studioKeyInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitStudioKey();
+      });
+      document.getElementById('btnDevKeyFill')?.addEventListener('click', () => {
+        const inp = document.getElementById('studioKeyInput');
+        if (inp) inp.value = 'admin';
+        document.getElementById('studioKeyError')?.classList.add('hidden');
+      });
+
+      // Studio Result Modal dismiss listeners
+      document.getElementById('btnCloseResultModal')?.addEventListener('click', () => {
+        document.getElementById('studioResultModal')?.classList.add('hidden');
+      });
+      document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
+        document.getElementById('studioResultModal')?.classList.add('hidden');
+      });
 
       document.addEventListener('click', (e) => {
         const card = e.target.closest('.scene-card-item');

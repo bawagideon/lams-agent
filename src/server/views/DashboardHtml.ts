@@ -99,15 +99,34 @@ export function renderDashboardHtml(
       </div>
       <span class="text-base font-extrabold text-gray-900 tracking-tight">LAMS HQ</span>
     </div>
-    <button id="mobileNavToggle" aria-label="Toggle Navigation Menu" class="p-2 text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-      </svg>
-    </button>
+    <div class="flex items-center gap-2">
+      <button id="btnOpenMobileChat" aria-label="Open AI Assistant" class="px-2.5 py-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition flex items-center gap-1.5 text-xs font-semibold">
+        <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+        </svg>
+        <span>Assistant</span>
+      </button>
+      <button id="mobileNavToggle" aria-label="Toggle Navigation Menu" class="p-2 text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+    </div>
   </header>
 
   <!-- Mobile Sidebar Backdrop -->
   <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-30 hidden md:hidden transition-opacity"></div>
+
+  <!-- Mobile Chat Assistant Backdrop -->
+  <div id="chatBackdrop" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 hidden lg:hidden transition-opacity"></div>
+
+  <!-- Mobile Floating Assistant Toggle Button -->
+  <button id="btnFloatingChatToggle" aria-label="Open AI Assistant" class="fixed bottom-5 right-5 z-20 lg:hidden bg-[#4338ca] hover:bg-[#3730a3] text-white p-3.5 rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform">
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+    </svg>
+    <span class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></span>
+  </button>
 
   <!-- ============================================================ -->
   <!-- 1. LEFT SIDEBAR NAVIGATION (Matching Home@2x.png)           -->
@@ -779,18 +798,52 @@ export function renderDashboardHtml(
                 <p class="text-xs text-gray-500">Video Publishing & Scheduling</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${channel.isConnected ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">
+            <span id="ytStatusBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${channel.isConnected ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">
               ${channel.isConnected ? 'Connected' : 'Sign-in Needed'}
             </span>
           </div>
-          <p class="text-xs text-gray-600 leading-relaxed">
+          <p id="ytStatusDesc" class="text-xs text-gray-600 leading-relaxed">
             ${channel.isConnected
               ? `Channel: <strong>${escapeHtml(channel.title)}</strong> (${escapeHtml(channel.subscriberCount || '0')} subs). All video releases upload in private mode for safety.`
               : 'Sign in with Lams Google account to enable private uploads and scheduled publishing.'}
           </p>
-          <a href="${escapeHtml(channel.authUrl)}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition shadow-sm">
-            ${channel.isConnected ? 'Re-link Channel' : 'Connect YouTube Account'}
-          </a>
+
+          <div class="flex flex-wrap items-center gap-3 pt-1">
+            <a href="${escapeHtml(channel.authUrl)}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition shadow-sm">
+              ${channel.isConnected ? 'Re-link via Google OAuth' : 'Connect via Google OAuth'}
+            </a>
+            <button id="btnToggleManualToken" type="button" class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline">
+              Direct Token Setup
+            </button>
+          </div>
+
+          <!-- Direct Token & OAuth Config Helper -->
+          <div id="ytTokenSetupContainer" class="hidden border-t border-gray-100 pt-3 space-y-3 text-xs">
+            <div class="bg-gray-50 rounded-xl p-3 border border-gray-200 space-y-1.5">
+              <div class="flex items-center justify-between text-gray-500 font-medium text-[11px]">
+                <span>Authorized Redirect URI</span>
+                <button id="btnCopyRedirectUri" type="button" class="text-indigo-600 hover:text-indigo-800 font-bold">Copy</button>
+              </div>
+              <code id="redirectUriCode" class="block bg-white p-1.5 rounded font-mono text-[11px] text-gray-700 break-all select-all">http://localhost:4200/oauth2callback</code>
+              <p class="text-[10px] text-gray-400">Ensure this exact URI is listed under "Authorized redirect URIs" in your Google Cloud Console.</p>
+            </div>
+
+            <div class="space-y-1.5">
+              <label for="inputYtRefreshToken" class="block font-bold text-gray-700 text-[11px] uppercase tracking-wider">Connect Existing Refresh Token</label>
+              <div class="flex gap-2">
+                <input 
+                  type="password" 
+                  id="inputYtRefreshToken" 
+                  placeholder="Paste GOOGLE_REFRESH_TOKEN" 
+                  class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
+                />
+                <button id="btnSaveYtToken" type="button" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm transition">
+                  Save & Connect
+                </button>
+              </div>
+              <p id="ytTokenMsg" class="hidden text-xs pt-1 font-medium"></p>
+            </div>
+          </div>
         </div>
 
         <!-- Supabase Database -->
@@ -851,7 +904,7 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 3. RIGHT ASSISTANT PANE (Matching Home@2x.png)              -->
   <!-- ============================================================ -->
-  <aside class="w-96 flex-shrink-0 bg-white border-l border-gray-200/80 flex flex-col justify-between h-full z-20">
+  <aside id="assistantPane" class="fixed inset-y-0 right-0 z-50 w-full sm:w-96 lg:static lg:z-20 lg:w-80 xl:w-96 flex-shrink-0 bg-white border-l border-gray-200/80 flex flex-col justify-between h-full transform translate-x-full lg:translate-x-0 transition-transform duration-200 ease-in-out shadow-2xl lg:shadow-none">
     <!-- Assistant Header -->
     <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
       <div class="flex items-center gap-3">
@@ -863,7 +916,10 @@ export function renderDashboardHtml(
           <p class="text-[11px] text-gray-400">Ask me to do something</p>
         </div>
       </div>
-      <button id="btnClearChat" class="text-gray-400 hover:text-gray-600 text-xs" title="Clear chat">↺</button>
+      <div class="flex items-center gap-2">
+        <button id="btnClearChat" class="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg text-xs" title="Clear chat">↺</button>
+        <button id="btnCloseChat" class="lg:hidden text-gray-400 hover:text-gray-700 p-1.5 rounded-lg text-sm font-bold" title="Close assistant">✕</button>
+      </div>
     </div>
 
     <!-- Live Messages Stream -->
@@ -941,7 +997,84 @@ export function renderDashboardHtml(
   </aside>
 
   <!-- ============================================================ -->
-  <!-- 4. DEDICATED RELEASE ROOM MODAL (Safe Mode Publishing)       -->
+  <!-- 4. STUDIO ACCESS KEY MODAL                                   -->
+  <!-- ============================================================ -->
+  <div id="studioKeyModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold">
+            🔑
+          </div>
+          <div>
+            <h3 class="text-base font-black text-gray-900">Studio Key Required</h3>
+            <p class="text-[11px] text-gray-500">Authorize CapCut & Render pipeline</p>
+          </div>
+        </div>
+        <button id="btnCloseKeyModal" type="button" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
+      </div>
+
+      <p id="studioKeyDescription" class="text-xs text-gray-600 leading-relaxed">
+        Desktop operations (CapCut draft assembly and FFmpeg rendering) require creator authorization. Enter your studio key or use dev mode.
+      </p>
+
+      <div class="space-y-2">
+        <label for="studioKeyInput" class="block text-[11px] font-bold text-gray-700 uppercase tracking-wider">Creator Key / Password</label>
+        <div class="flex gap-2">
+          <input 
+            type="password" 
+            id="studioKeyInput" 
+            placeholder="Enter key or 'admin'" 
+            class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
+          />
+          <button id="btnDevKeyFill" type="button" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold px-3 py-2 rounded-xl border border-gray-200 transition">
+            Dev Key
+          </button>
+        </div>
+        <p id="studioKeyError" class="hidden text-xs text-red-600 font-medium pt-1"></p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-2">
+        <button id="btnCancelKeyModal" type="button" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Cancel
+        </button>
+        <button id="btnSubmitKeyModal" type="button" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+          Authorize & Continue
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 5. OPERATION RESULT MODAL (CapCut & FFmpeg)                  -->
+  <!-- ============================================================ -->
+  <div id="studioResultModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div id="studioResultIcon" class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-bold">
+            ✓
+          </div>
+          <div>
+            <h3 id="studioResultTitle" class="text-base font-black text-gray-900">Operation Complete</h3>
+            <p id="studioResultSubtitle" class="text-[11px] text-gray-500">Asset ready in studio</p>
+          </div>
+        </div>
+        <button id="btnCloseResultModal" type="button" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
+      </div>
+
+      <div id="studioResultBody" class="text-xs text-gray-600 space-y-3"></div>
+
+      <div id="studioResultActions" class="flex items-center justify-end gap-2.5 pt-2">
+        <button id="btnDismissResultModal" type="button" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 6. DEDICATED RELEASE ROOM MODAL (Safe Mode Publishing)       -->
   <!-- ============================================================ -->
   <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
     <div class="bg-white max-w-xl w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
@@ -1088,6 +1221,142 @@ export function renderDashboardHtml(
   <script>
     let activeReleaseEpId = '${currentEpisode.id}';
     let currentTab = '${initialTab}';
+    let currentStatusFilter = 'all';
+    let pendingAction = null;
+    let savedCsrfToken = null;
+
+    async function requestWithAuth(url, options = {}) {
+      const headers = options.headers || {};
+      if (savedCsrfToken) {
+        headers['x-csrf-token'] = savedCsrfToken;
+      }
+      options.headers = headers;
+      options.credentials = 'same-origin';
+      return await fetch(url, options);
+    }
+
+    function openKeyModal(desc, pending) {
+      if (pending) pendingAction = pending;
+      const modal = document.getElementById('studioKeyModal');
+      const descEl = document.getElementById('studioKeyDescription');
+      const errEl = document.getElementById('studioKeyError');
+      const input = document.getElementById('studioKeyInput');
+      if (descEl && desc) descEl.innerText = desc;
+      if (errEl) {
+        errEl.innerText = '';
+        errEl.classList.add('hidden');
+      }
+      if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 50);
+      }
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeKeyModal() {
+      const modal = document.getElementById('studioKeyModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function submitStudioKey() {
+      const input = document.getElementById('studioKeyInput');
+      const errEl = document.getElementById('studioKeyError');
+      const btn = document.getElementById('btnSubmitKeyModal');
+      const key = input ? input.value.trim() : '';
+      if (!key) {
+        if (errEl) {
+          errEl.innerText = 'Please enter your studio key or use Dev Key.';
+          errEl.classList.remove('hidden');
+        }
+        return;
+      }
+      if (btn) btn.innerText = 'Verifying...';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: key }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Invalid credentials. Please try again.');
+        }
+        savedCsrfToken = data.csrfToken;
+        closeKeyModal();
+        if (pendingAction) {
+          const act = pendingAction;
+          pendingAction = null;
+          if (act.type === 'capcut') {
+            await assembleCapCutDraft(act.id);
+          }
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.innerText = err.message;
+          errEl.classList.remove('hidden');
+        }
+      } finally {
+        if (btn) btn.innerText = 'Authorize & Continue';
+      }
+    }
+
+    function showCapCutSuccessModal(data, episodeId) {
+      const modal = document.getElementById('studioResultModal');
+      const title = document.getElementById('studioResultTitle');
+      const sub = document.getElementById('studioResultSubtitle');
+      const body = document.getElementById('studioResultBody');
+      const actions = document.getElementById('studioResultActions');
+
+      title.innerText = 'CapCut Draft Assembled!';
+      sub.innerText = 'Draft project generated with ' + (data.tracksCount || '4') + ' tracks';
+
+      const draftPath = data.draftPath || 'data/capcut_projects/...';
+      body.innerHTML = `
+        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">
+          <div class="flex items-center justify-between text-gray-500">
+            <span class="font-bold uppercase tracking-wider text-[10px]">Project Draft Location</span>
+            <button id="btnCopyDraftPath" type="button" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">
+              📋 Copy Path
+            </button>
+          </div>
+          <code id="draftPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">${draftPath}</code>
+        </div>
+        <div class="space-y-1.5 text-gray-600">
+          <p class="font-semibold text-gray-900">Next Steps in Desktop:</p>
+          <ol class="list-decimal list-inside space-y-1">
+            <li>Launch <strong>CapCut Desktop</strong> on your computer.</li>
+            <li>The project is already in your CapCut project drafts list.</li>
+            <li>Review and polish cuts, animations, audio, and subtitles.</li>
+          </ol>
+        </div>
+      `;
+
+      actions.innerHTML = `
+        <button id="btnDismissResultModal" type="button" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Close
+        </button>
+        <a href="/episodes/${episodeId}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
+          Watch & Render Video
+        </a>
+      `;
+
+      modal.classList.remove('hidden');
+
+      document.getElementById('btnCopyDraftPath')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(draftPath).then(() => {
+          const btn = document.getElementById('btnCopyDraftPath');
+          if (btn) btn.innerText = '✓ Copied!';
+          setTimeout(() => {
+            const b = document.getElementById('btnCopyDraftPath');
+            if (b) b.innerText = '📋 Copy Path';
+          }, 2000);
+        });
+      });
+
+      document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
+        modal.classList.add('hidden');
+      });
+    }
 
     // Set default tomorrow date
     const tomorrow = new Date();
@@ -1145,44 +1414,97 @@ export function renderDashboardHtml(
       switchTab(targetTab, false);
     });
 
-    // Filter Episodes in Episodes Tab
-    function filterEpisodes(status) {
-      const cards = document.querySelectorAll('#allEpisodesGrid > div');
-      cards.forEach(c => {
-        const cardStatus = c.getAttribute('data-status');
-        if (status === 'all' || cardStatus === status) {
-          c.style.display = '';
+    // Filter Episodes in Episodes Tab with Case-Insensitive Matching & Persistence
+    function applyEpisodeFilters() {
+      const searchInput = document.getElementById('episodeSearchInput');
+      const query = (searchInput?.value || '').toLowerCase().trim();
+      const cards = document.querySelectorAll('#allEpisodesGrid > div:not(#noEpisodesEmptyState)');
+      let visibleCount = 0;
+
+      cards.forEach(card => {
+        const title = decodeURIComponent(card.getAttribute('data-title') || '').toLowerCase();
+        const project = decodeURIComponent(card.getAttribute('data-project') || '').toLowerCase();
+        const cardStatus = (card.getAttribute('data-status') || '').toLowerCase().trim();
+
+        const matchesSearch = !query || title.includes(query) || project.includes(query);
+
+        let matchesStatus = false;
+        if (currentStatusFilter === 'all') {
+          matchesStatus = true;
+        } else if (currentStatusFilter.toLowerCase().includes('review')) {
+          matchesStatus = cardStatus.includes('review');
+        } else if (currentStatusFilter.toLowerCase().includes('draft')) {
+          matchesStatus = cardStatus.includes('draft');
+        } else if (currentStatusFilter.toLowerCase().includes('sched')) {
+          matchesStatus = cardStatus.includes('sched');
         } else {
-          c.style.display = 'none';
+          matchesStatus = cardStatus === currentStatusFilter.toLowerCase();
+        }
+
+        if (matchesSearch && matchesStatus) {
+          card.style.display = '';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
         }
       });
 
-      // Update button highlights
-      ['all', 'review', 'draft', 'scheduled'].forEach(btnKey => {
-        const btn = document.getElementById('filter-btn-' + btnKey);
-        if (!btn) return;
-        if ((btnKey === 'all' && status === 'all') || btnKey.toLowerCase() === status.toLowerCase()) {
-          btn.classList.add('bg-[#4338ca]', 'text-white');
-          btn.classList.remove('bg-gray-100', 'text-gray-700', 'bg-amber-100', 'text-amber-900', 'bg-emerald-100', 'text-emerald-900');
+      let emptyState = document.getElementById('noEpisodesEmptyState');
+      if (visibleCount === 0) {
+        if (!emptyState) {
+          emptyState = document.createElement('div');
+          emptyState.id = 'noEpisodesEmptyState';
+          emptyState.className = 'col-span-full py-12 text-center text-gray-500 bg-white border border-dashed border-gray-200 rounded-2xl';
+          const grid = document.getElementById('allEpisodesGrid');
+          if (grid) grid.appendChild(emptyState);
+        }
+        emptyState.innerHTML = `
+          <div class="text-3xl mb-2">🔍</div>
+          <p class="font-bold text-gray-800 text-sm">No episodes found</p>
+          <p class="text-xs text-gray-500 mt-1">No episodes match your selected status filter or search query.</p>
+          <button id="btnResetFilters" type="button" class="mt-3 text-xs bg-indigo-50 text-indigo-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition">
+            Show all episodes
+          </button>
+        `;
+        emptyState.style.display = '';
+        document.getElementById('btnResetFilters')?.addEventListener('click', () => {
+          if (searchInput) searchInput.value = '';
+          filterEpisodes('all');
+        });
+      } else if (emptyState) {
+        emptyState.style.display = 'none';
+      }
+    }
+
+    function filterEpisodes(status) {
+      currentStatusFilter = status || 'all';
+
+      const buttons = [
+        { id: 'filter-btn-all', key: 'all', activeClass: 'bg-[#4338ca] text-white shadow-sm', inactiveClass: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+        { id: 'filter-btn-review', key: 'review', activeClass: 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-300', inactiveClass: 'bg-amber-100 text-amber-900 hover:bg-amber-200' },
+        { id: 'filter-btn-draft', key: 'draft', activeClass: 'bg-gray-800 text-white shadow-sm ring-2 ring-gray-400', inactiveClass: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+        { id: 'filter-btn-scheduled', key: 'scheduled', activeClass: 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-300', inactiveClass: 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200' },
+      ];
+
+      buttons.forEach(b => {
+        const el = document.getElementById(b.id);
+        if (!el) return;
+        el.className = 'filter-ep-btn px-3 py-1.5 rounded-lg font-medium transition ';
+        const isActive = (b.key === 'all' && currentStatusFilter === 'all') || 
+                         (b.key !== 'all' && currentStatusFilter.toLowerCase().includes(b.key));
+        if (isActive) {
+          el.className += b.activeClass;
         } else {
-          btn.classList.remove('bg-[#4338ca]', 'text-white');
+          el.className += b.inactiveClass;
         }
       });
+
+      applyEpisodeFilters();
     }
 
     // Live Search Filter for Episodes
     function filterEpisodesBySearch(query) {
-      const clean = (query || '').toLowerCase().trim();
-      const cards = document.querySelectorAll('#allEpisodesGrid > div');
-      cards.forEach(c => {
-        const title = decodeURIComponent(c.getAttribute('data-title') || '');
-        const project = decodeURIComponent(c.getAttribute('data-project') || '');
-        if (!clean || title.includes(clean) || project.includes(clean)) {
-          c.style.display = '';
-        } else {
-          c.style.display = 'none';
-        }
-      });
+      applyEpisodeFilters();
     }
 
     // Chat Logic
@@ -1268,11 +1590,15 @@ export function renderDashboardHtml(
       appendChatMessage('user', 'Assemble CapCut Draft for episode ' + id);
       appendChatMessage('agent', 'Creating CapCut timeline draft and resolving scene assets...');
       try {
-        const res = await fetch('/api/episodes/' + id + '/capcut', { method: 'POST' });
+        const res = await requestWithAuth('/api/episodes/' + id + '/capcut', { method: 'POST' });
+        if (res.status === 401) {
+          openKeyModal('CapCut draft generation requires creator authorization.', { type: 'capcut', id });
+          return;
+        }
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        appendChatMessage('agent', '✓ CapCut draft created with ' + data.tracksCount + ' tracks. Ready to open in CapCut Desktop.');
-        alert('✓ CapCut Draft Created!\nLocation: ' + (data.draftPath || 'Queued') + '\nOpen CapCut Desktop to see your timeline.');
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to assemble CapCut draft');
+        appendChatMessage('agent', '✓ CapCut draft created with ' + (data.tracksCount || '4') + ' tracks. Ready to open in CapCut Desktop.');
+        showCapCutSuccessModal(data, id);
       } catch (err) {
         appendChatMessage('agent', '❌ Failed to create draft: ' + err.message);
         alert('Error: ' + err.message);
@@ -2157,6 +2483,139 @@ export function renderDashboardHtml(
       document.getElementById('palBtnAssert')?.addEventListener('click', () => {
         const cond = prompt('Enter verification condition to assert (e.g. "Processing 100% Complete"):');
         if (cond) recordStudioEvent('assertion', { target: cond, inputData: cond });
+      });
+
+      // Mobile Chat Drawer Handlers
+      function openChatDrawer() {
+        const pane = document.getElementById('assistantPane');
+        const backdrop = document.getElementById('chatBackdrop');
+        if (pane) {
+          pane.classList.remove('translate-x-full');
+          pane.classList.add('translate-x-0');
+        }
+        if (backdrop) backdrop.classList.remove('hidden');
+      }
+
+      function closeChatDrawer() {
+        const pane = document.getElementById('assistantPane');
+        const backdrop = document.getElementById('chatBackdrop');
+        if (pane) {
+          pane.classList.add('translate-x-full');
+          pane.classList.remove('translate-x-0');
+        }
+        if (backdrop) backdrop.classList.add('hidden');
+      }
+
+      document.getElementById('btnOpenMobileChat')?.addEventListener('click', openChatDrawer);
+      document.getElementById('btnFloatingChatToggle')?.addEventListener('click', openChatDrawer);
+      document.getElementById('btnCloseChat')?.addEventListener('click', closeChatDrawer);
+      document.getElementById('chatBackdrop')?.addEventListener('click', closeChatDrawer);
+
+      // Studio Access Key Modal Listeners
+      document.getElementById('btnCloseKeyModal')?.addEventListener('click', closeKeyModal);
+      document.getElementById('btnCancelKeyModal')?.addEventListener('click', closeKeyModal);
+      document.getElementById('btnSubmitKeyModal')?.addEventListener('click', submitStudioKey);
+      document.getElementById('studioKeyInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitStudioKey();
+      });
+      document.getElementById('btnDevKeyFill')?.addEventListener('click', () => {
+        const inp = document.getElementById('studioKeyInput');
+        if (inp) inp.value = 'admin';
+        document.getElementById('studioKeyError')?.classList.add('hidden');
+      });
+
+      document.getElementById('btnCloseResultModal')?.addEventListener('click', () => {
+        document.getElementById('studioResultModal')?.classList.add('hidden');
+      });
+      document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
+        document.getElementById('studioResultModal')?.classList.add('hidden');
+      });
+
+      // YouTube Direct Token Setup Handlers
+      document.getElementById('btnToggleManualToken')?.addEventListener('click', () => {
+        const container = document.getElementById('ytTokenSetupContainer');
+        if (container) container.classList.toggle('hidden');
+      });
+
+      document.getElementById('btnCopyRedirectUri')?.addEventListener('click', () => {
+        const code = document.getElementById('redirectUriCode')?.innerText || '';
+        if (code) {
+          navigator.clipboard.writeText(code).then(() => {
+            const btn = document.getElementById('btnCopyRedirectUri');
+            if (btn) btn.innerText = 'Copied!';
+            setTimeout(() => {
+              const b = document.getElementById('btnCopyRedirectUri');
+              if (b) b.innerText = 'Copy';
+            }, 2000);
+          });
+        }
+      });
+
+      document.getElementById('btnSaveYtToken')?.addEventListener('click', async () => {
+        const input = document.getElementById('inputYtRefreshToken');
+        const msg = document.getElementById('ytTokenMsg');
+        const btn = document.getElementById('btnSaveYtToken');
+        const token = input ? input.value.trim() : '';
+
+        if (!token) {
+          if (msg) {
+            msg.className = 'text-xs pt-1 text-red-600 font-medium';
+            msg.innerText = 'Please paste a valid YouTube refresh token.';
+            msg.classList.remove('hidden');
+          }
+          return;
+        }
+
+        if (btn) btn.innerText = 'Verifying...';
+        try {
+          const res = await requestWithAuth('/api/connections/youtube/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: token }),
+          });
+          if (res.status === 401) {
+            openKeyModal('Creator authorization required to update YouTube credentials.');
+            return;
+          }
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to verify token with Google');
+          }
+
+          if (msg) {
+            msg.className = 'text-xs pt-1 text-emerald-600 font-bold';
+            msg.innerText = '✓ Connected to ' + data.channelTitle + '!';
+            msg.classList.remove('hidden');
+          }
+
+          const badge = document.getElementById('ytStatusBadge');
+          if (badge) {
+            badge.className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200';
+            badge.innerText = 'Connected';
+          }
+          const desc = document.getElementById('ytStatusDesc');
+          if (desc) {
+            desc.innerHTML = 'Channel: <strong>' + data.channelTitle + '</strong> (' + (data.subscriberCount || '0') + ' subs). All video releases upload in private mode for safety.';
+          }
+        } catch (err) {
+          if (msg) {
+            msg.className = 'text-xs pt-1 text-red-600 font-medium';
+            msg.innerText = err.message;
+            msg.classList.remove('hidden');
+          }
+        } finally {
+          if (btn) btn.innerText = 'Save & Connect';
+        }
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeChatDrawer();
+          closeKeyModal();
+          closeReleaseRoom();
+          closeTeachModal();
+          closeSkillApprovalModal();
+        }
       });
 
       // Preset Buttons

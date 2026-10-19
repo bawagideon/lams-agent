@@ -70,6 +70,9 @@ export class MissionControlServer {
   }
 
   private getDynamicRedirectUri(req: http.IncomingMessage): string {
+    if (config.GOOGLE_REDIRECT_URI) {
+      return config.GOOGLE_REDIRECT_URI;
+    }
     const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${this.port}`;
     const proto = req.headers['x-forwarded-proto'] || (host.toString().includes('localhost') ? 'http' : 'https');
     return `${proto}://${host}/oauth2callback`;
@@ -86,7 +89,9 @@ export class MissionControlServer {
   ): { authorized: boolean; session?: AuthSession } {
     const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
     const requireAuth = process.env.LAMS_REQUIRE_AUTH === 'true' || isProduction;
-    const hasAuthAttempt = !!(req.headers['authorization'] || req.headers['cookie']);
+    const cookieHeader = req.headers['cookie'] as string | undefined;
+    const hasLamsCookie = !!(cookieHeader && cookieHeader.includes('lams_session='));
+    const hasAuthAttempt = !!(req.headers['authorization'] || hasLamsCookie);
     const authResult = this.authManager.authenticateRequest(req);
 
     if (authResult.authenticated && authResult.session) {
@@ -230,7 +235,27 @@ export class MissionControlServer {
 
       if (error || !code) {
         res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(`<h1>YouTube Connection Notice</h1><p>${escapeHtml(error || 'Missing authorization code')}</p><p><a href="/">Back to Studio</a></p>`);
+        res.end(`
+          <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 60px; background: #f8fafc; color: #0f172a;">
+              <div style="max-width: 520px; margin: 0 auto; background: white; padding: 36px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+                <div style="font-size: 36px; margin-bottom: 12px;">⚠️</div>
+                <h1 style="color: #b45309; font-size: 20px; font-weight: bold; margin-bottom: 12px;">YouTube Authorization Notice</h1>
+                <p style="font-size: 14px; color: #475569; line-height: 1.5; margin-bottom: 20px;">
+                  ${escapeHtml(error || 'Authorization code was not returned by Google.')}
+                </p>
+                <div style="text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; font-size: 12px; color: #64748b; margin-bottom: 24px;">
+                  <strong style="color: #1e293b;">How to resolve:</strong>
+                  <ul style="margin: 6px 0 0 18px; padding: 0; line-height: 1.6;">
+                    <li>Ensure your redirect URI (<code style="background: #e2e8f0; padding: 2px 4px; border-radius: 4px;">${escapeHtml(dynamicRedirectUri)}</code>) is added in Google Cloud Console.</li>
+                    <li>Or paste your <code style="background: #e2e8f0; padding: 2px 4px; border-radius: 4px;">GOOGLE_REFRESH_TOKEN</code> directly in the Connections tab.</li>
+                  </ul>
+                </div>
+                <a href="/connections" style="display: inline-block; background: #4338ca; color: white; padding: 10px 24px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 13px;">Return to Connections</a>
+              </div>
+            </body>
+          </html>
+        `);
         return;
       }
 
@@ -250,7 +275,49 @@ export class MissionControlServer {
       } catch (authErr: any) {
         const isCsrf = authErr.message.includes('CSRF') || authErr.message.includes('state');
         res.writeHead(isCsrf ? 403 : 500, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(`<h1>Connection Notice</h1><p style="color: #dc2626;">${escapeHtml(authErr.message)}</p><p><a href="/connections">Back to Studio</a></p>`);
+        res.end(`
+          <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 60px; background: #f8fafc; color: #0f172a;">
+              <div style="max-width: 500px; margin: 0 auto; background: white; padding: 36px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #fee2e2;">
+                <h1 style="color: #dc2626; font-size: 20px; font-weight: bold;">Connection Notice</h1>
+                <p style="color: #b91c1c; font-size: 14px; margin: 12px 0 24px 0;">${escapeHtml(authErr.message)}</p>
+                <a href="/connections" style="display: inline-block; background: #4338ca; color: white; padding: 10px 24px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 13px;">Back to Connections</a>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+      return;
+    }
+
+    // Direct YouTube Refresh Token configuration endpoint
+    if (method === 'POST' && url.pathname === '/api/connections/youtube/token') {
+      const auth = this.checkAuth(req, res, 'creator');
+      if (!auth.authorized) return;
+
+      try {
+        const rawBody = await this.readRequestBody(req);
+        const { refreshToken } = JSON.parse(rawBody || '{}');
+
+        if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim().length < 10) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Valid YouTube refresh token is required.' }));
+          return;
+        }
+
+        const cleanToken = refreshToken.trim();
+        const testResult = await this.youtubeLive.verifyAndSaveRefreshToken(cleanToken, dynamicRedirectUri);
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          channelTitle: testResult.channelTitle,
+          channelId: testResult.channelId,
+          subscriberCount: testResult.subscriberCount,
+        }));
+      } catch (err: any) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Failed to verify token with Google YouTube API: ${err.message}` }));
       }
       return;
     }
