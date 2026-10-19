@@ -1432,9 +1432,18 @@ export function renderDashboardHtml(
           mediaRecorder.ondataavailable = (e) => {
             if (e.data && e.data.size > 0) recordedMediaChunks.push(e.data);
           };
+          mediaRecorder.onerror = (e) => {
+            console.error('MediaRecorder error:', e);
+            alert('Screen recorder encountered an error during capture: ' + (e.error?.message || 'Unknown error'));
+            stopScreenCapture();
+          };
           mediaRecorder.start(1000);
         } catch (mediaErr) {
           console.warn('MediaRecorder init error:', mediaErr);
+          alert('Failed to initialize screen recording: ' + mediaErr.message);
+          stream.getTracks().forEach(t => t.stop());
+          screenMediaStream = null;
+          return;
         }
 
         document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
@@ -1473,48 +1482,61 @@ export function renderDashboardHtml(
     }
 
     async function stopScreenCapture() {
-      if (screenMediaStream) {
-        screenMediaStream.getTracks().forEach(t => t.stop());
-        screenMediaStream = null;
-      }
       if (recordingTimerInterval) {
         clearInterval(recordingTimerInterval);
         recordingTimerInterval = null;
       }
 
-      // Stop real MediaRecorder and assemble replay blob
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      // Await real MediaRecorder onstop event before assembling blob
+      const assembleMediaPromise = new Promise((resolve) => {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+          resolve(null);
+          return;
+        }
+        mediaRecorder.onstop = () => {
+          if (recordedMediaChunks.length > 0) {
+            const blob = new Blob(recordedMediaChunks, { type: 'video/webm' });
+            const blobUrl = URL.createObjectURL(blob);
+            resolve(blobUrl);
+          } else {
+            resolve(null);
+          }
+        };
         try {
           mediaRecorder.stop();
-        } catch {}
+        } catch {
+          resolve(null);
+        }
+      });
+
+      if (screenMediaStream) {
+        screenMediaStream.getTracks().forEach(t => t.stop());
+        screenMediaStream = null;
       }
 
-      setTimeout(() => {
-        if (recordedMediaChunks.length > 0) {
-          const blob = new Blob(recordedMediaChunks, { type: 'video/webm' });
-          const blobUrl = URL.createObjectURL(blob);
-          const dlBtn = document.getElementById('btnDownloadVideo');
-          if (dlBtn) {
-            dlBtn.href = blobUrl;
-            dlBtn.classList.remove('hidden');
-          }
-          const video = document.getElementById('recorderScreenVideo');
-          if (video) {
-            video.srcObject = null;
-            video.src = blobUrl;
-            video.controls = true;
-            video.classList.remove('hidden');
-            document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
-          }
-        } else {
-          const video = document.getElementById('recorderScreenVideo');
-          if (video) {
-            video.srcObject = null;
-            video.classList.add('hidden');
-          }
-          document.getElementById('viewfinderIdleOverlay')?.classList.remove('hidden');
+      const blobUrl = await assembleMediaPromise;
+      if (blobUrl) {
+        const dlBtn = document.getElementById('btnDownloadVideo');
+        if (dlBtn) {
+          dlBtn.href = blobUrl;
+          dlBtn.classList.remove('hidden');
         }
-      }, 300);
+        const video = document.getElementById('recorderScreenVideo');
+        if (video) {
+          video.srcObject = null;
+          video.src = blobUrl;
+          video.controls = true;
+          video.classList.remove('hidden');
+          document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
+        }
+      } else {
+        const video = document.getElementById('recorderScreenVideo');
+        if (video) {
+          video.srcObject = null;
+          video.classList.add('hidden');
+        }
+        document.getElementById('viewfinderIdleOverlay')?.classList.remove('hidden');
+      }
 
       document.getElementById('recorderLiveHud')?.classList.add('hidden');
       document.getElementById('btnStartCapture')?.classList.remove('hidden');
@@ -1788,9 +1810,14 @@ export function renderDashboardHtml(
       }
     }
 
+    let pendingRunSkillId = null;
+    let pendingRunProposalId = null;
+    let pendingRunApprovalToken = null;
+
     // Skill Execution with Real Human Approval Gate Preflight
     async function runSkill(id) {
       pendingRunSkillId = id;
+      pendingRunProposalId = null;
       appendChatMessage('agent', 'Checking preflight approval requirements for skill: **' + id + '**...');
 
       try {
@@ -1805,7 +1832,7 @@ export function renderDashboardHtml(
 
         if (propData.requiresApproval) {
           // Open Cryptographic Approval Modal
-          pendingRunApprovalToken = propData.approvalToken;
+          pendingRunProposalId = propData.proposalId;
           document.getElementById('approvalModalSkillName').innerText = propData.proposal?.skillName || id;
           document.getElementById('approvalModalGateLevel').innerText = (propData.proposal?.gateLevel || 'Level 2: Approval Gate').toUpperCase();
 
@@ -1857,6 +1884,7 @@ export function renderDashboardHtml(
 
     function closeSkillApprovalModal() {
       document.getElementById('skillApprovalModal')?.classList.add('hidden');
+      pendingRunProposalId = null;
       pendingRunApprovalToken = null;
     }
 
@@ -1896,10 +1924,23 @@ export function renderDashboardHtml(
       document.getElementById('btnCancelSkillApproval')?.addEventListener('click', closeSkillApprovalModal);
       document.getElementById('btnConfirmSkillApproval')?.addEventListener('click', async () => {
         const skillId = pendingRunSkillId;
-        const token = pendingRunApprovalToken;
+        const proposalId = pendingRunProposalId;
         closeSkillApprovalModal();
-        if (skillId) {
-          await executeSkillWithToken(skillId, token);
+        if (skillId && proposalId) {
+          try {
+            appendChatMessage('agent', 'Authorizing execution plan for **' + skillId + '**...');
+            const apprRes = await fetch('/api/skills/' + skillId + '/approve-run', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ proposalId })
+            });
+            const apprData = await apprRes.json();
+            if (!apprRes.ok || apprData.error) throw new Error(apprData.error || 'Approval authorization failed');
+            await executeSkillWithToken(skillId, apprData.approvalToken);
+          } catch (err) {
+            appendChatMessage('agent', 'Approval failed: ' + err.message);
+            alert('Approval failed: ' + err.message);
+          }
         }
       });
 

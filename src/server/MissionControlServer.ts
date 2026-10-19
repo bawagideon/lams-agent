@@ -944,10 +944,7 @@ export class MissionControlServer {
         }
 
         const skillName = (name || 'Custom Workflow').trim();
-        const compiled = this.workflowCompiler.compile(skillName, demoEvents);
-        if (isSampleTemplate) {
-          compiled.skill.description = `[Sample Template] ${compiled.skill.description}`;
-        }
+        const compiled = this.workflowCompiler.compile(skillName, demoEvents, { isSampleTemplate: !!isSampleTemplate });
         this.skillRegistry.registerSkill(compiled.skill, true);
         this.demonstrationRecorder.clear();
 
@@ -966,7 +963,7 @@ export class MissionControlServer {
       return;
     }
 
-    // 17. API: Skill Execution Proposal (Approval Gate Preflight)
+    // 17. API: Skill Execution Proposal (Approval Gate Preflight - Read Permission)
     if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/propose-run')) {
       const auth = this.checkAuth(req, res, 'read');
       if (!auth.authorized) return;
@@ -997,7 +994,7 @@ export class MissionControlServer {
         }
 
         const userId = auth.session?.userId || 'creator';
-        const { proposal, approvalToken } = this.approvalManager.createSkillExecutionProposal(
+        const { proposalId, proposal } = this.approvalManager.createSkillExecutionProposal(
           skill,
           runtimeParams,
           userId
@@ -1006,7 +1003,7 @@ export class MissionControlServer {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           requiresApproval: true,
-          approvalToken,
+          proposalId,
           proposal,
           actions: skill.actions,
         }));
@@ -1014,6 +1011,67 @@ export class MissionControlServer {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: propErr.message }));
       }
+      return;
+    }
+
+    // 17b. API: Skill Execution Approval (Human Approval Action - Approve Permission Required)
+    if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/approve-run')) {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
+      const skillId = url.pathname.split('/')[3];
+      const skill = this.skillRegistry.getSkill(skillId);
+      if (!skill) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Skill not found' }));
+        return;
+      }
+
+      try {
+        const body = await this.readRequestBody(req);
+        const { proposalId } = JSON.parse(body || '{}');
+        if (!proposalId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing required proposalId to approve.' }));
+          return;
+        }
+
+        const approverUserId = auth.session?.userId || 'creator';
+        const { approvalToken, proposal } = await this.approvalManager.approveSkillExecutionProposal(
+          proposalId,
+          approverUserId
+        );
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          approvalToken,
+          proposal,
+        }));
+      } catch (apprErr: any) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: apprErr.message }));
+      }
+      return;
+    }
+
+    // 17c. API: Skill Promotion (Promote draft or sample template to verified production status)
+    if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/promote')) {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
+      const skillId = url.pathname.split('/')[3];
+      const skill = this.skillRegistry.getSkill(skillId);
+      if (!skill) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Skill not found' }));
+        return;
+      }
+
+      skill.status = 'verified_production';
+      skill.isSample = false;
+      this.skillRegistry.registerSkill(skill, true);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, skill }));
       return;
     }
 
@@ -1036,6 +1094,16 @@ export class MissionControlServer {
         const headerToken = req.headers['x-approval-token'] as string | undefined;
         const candidateToken = approvalToken || headerToken;
 
+        // Block unverified sample template in production
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (isProd && (skill.isSample || skill.status === 'sample_template')) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: `Execution denied: Skill '${skill.name}' is an unverified sample template. Review and promote to verified production status before executing.`,
+          }));
+          return;
+        }
+
         const requiresApproval = skill.approvalGate?.required && skill.approvalGate.level !== '0_autonomous';
         let isApprovedByHuman = false;
 
@@ -1043,19 +1111,21 @@ export class MissionControlServer {
           if (!candidateToken) {
             res.writeHead(403, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
-              error: `Execution denied: Skill '${skill.name}' requires human approval at level '${skill.approvalGate.level}'. Please call /propose-run first to review the plan and obtain an approval token.`,
+              error: `Execution denied: Skill '${skill.name}' requires human approval at level '${skill.approvalGate.level}'. Please call /propose-run and /approve-run first to obtain an approval token.`,
               requiresApproval: true,
               gateLevel: skill.approvalGate.level,
             }));
             return;
           }
 
-          const validation = this.approvalManager.validateAndConsumeSkillApproval(
+          const executingUserId = auth.session?.userId || 'creator';
+          const validation = await this.approvalManager.validateAndConsumeSkillApproval(
             candidateToken,
             skill.id,
             skill.version,
             runtimeParams,
-            skill.actions
+            skill.actions,
+            executingUserId
           );
 
           if (!validation.valid) {

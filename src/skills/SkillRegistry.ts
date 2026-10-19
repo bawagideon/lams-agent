@@ -54,10 +54,16 @@ export class SkillRegistry {
   }
 
   public getSkill(idOrKey: string): SkillContract | undefined {
-    return this.skills.get(idOrKey);
+    let skill = this.skills.get(idOrKey);
+    if (!skill) {
+      this.loadCustomSkills();
+      skill = this.skills.get(idOrKey);
+    }
+    return skill;
   }
 
   public listSkills(): SkillContract[] {
+    this.loadCustomSkills();
     const seen = new Set<string>();
     const list: SkillContract[] = [];
     for (const [key, skill] of this.skills.entries()) {
@@ -78,6 +84,8 @@ export class SkillRegistry {
       version: '1.0.0',
       description: 'End-to-end pipeline: from approved topic to research, script, voiceover, visual generation and scene blueprint.',
       executionMode: 'deterministic_api',
+      isSample: false,
+      status: 'verified_production',
       inputs: {
         topic: { type: 'string', description: 'Core subject or episode theme', required: true },
         targetDurationMinutes: { type: 'number', description: 'Target duration in minutes', required: false },
@@ -109,6 +117,8 @@ export class SkillRegistry {
       version: '1.2.0',
       description: 'Translates generated media plan into a native CapCut desktop project draft with multi-track layout, transitions, and audio ducking.',
       executionMode: 'file_draft',
+      isSample: false,
+      status: 'verified_production',
       inputs: {
         mediaPlanPath: { type: 'string', description: 'Path to media_plan.json', required: true },
       },
@@ -137,6 +147,8 @@ export class SkillRegistry {
       version: '2.0.0',
       description: 'Uploads master video via YouTube Data API v3, sets metadata, applies thumbnail, schedules release, and verifies channel status.',
       executionMode: 'deterministic_api',
+      isSample: false,
+      status: 'verified_production',
       inputs: {
         videoPath: { type: 'string', description: 'Master MP4 file path', required: true },
         title: { type: 'string', description: 'YouTube video title', required: true },
@@ -170,6 +182,8 @@ export class SkillRegistry {
       version: '1.0.0',
       description: 'Extracts the most engaging 30-second scene hook and formats it into a 9:16 vertical short with auto-centered captions.',
       executionMode: 'deterministic_api',
+      isSample: false,
+      status: 'verified_production',
       inputs: {
         episodeId: { type: 'string', description: 'Source episode ID', required: true },
       },

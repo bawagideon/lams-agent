@@ -8,11 +8,17 @@ export interface CompilationResult {
   suggestedGateLevel: '0_autonomous' | '1_notify' | '2_approval_gate' | '3_strict_dual_key';
 }
 
+export interface CompileOptions {
+  isSampleTemplate?: boolean;
+}
+
 export class WorkflowCompiler {
   /**
-   * Compiles an observed GUI demonstration trace into a portable, verified SkillContract
+   * Compiles an observed GUI demonstration trace into a portable, verified SkillContract.
+   * Performs schema validation on every synthesized action to prevent malformed execution.
    */
-  public compile(sessionName: string, events: ObservedEvent[]): CompilationResult {
+  public compile(sessionName: string, events: ObservedEvent[], options?: CompileOptions): CompilationResult {
+    const isSample = !!options?.isSampleTemplate;
     const skillId = sessionName.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const steps: SkillActionStep[] = [];
     const detectedInputs: Record<string, { type: string; description: string; required: boolean }> = {};
@@ -20,16 +26,20 @@ export class WorkflowCompiler {
     let stepIndex = 1;
     let hasPublishOrExport = false;
 
-    // Semantic grouping: merge repetitive clicks / keystrokes into abstract intent
+    // Semantic grouping: merge and validate observed actions into verified intent
     for (let i = 0; i < events.length; i++) {
       const ev = events[i];
 
       if (ev.eventType === 'navigate') {
+        const target = String(ev.inputData ?? ev.windowTitle ?? '').trim();
+        if (!target) {
+          throw new Error(`Compilation error at step ${stepIndex}: 'navigate' event requires non-empty target URL or title.`);
+        }
         steps.push({
           step: stepIndex++,
           name: `Navigate to ${ev.targetElement?.text || ev.application}`,
           action: 'browser.navigate',
-          parameters: { target: ev.inputData || ev.windowTitle },
+          parameters: { target },
         });
       } else if (ev.eventType === 'file_select') {
         const inputKey = `input_file_${stepIndex}`;
@@ -46,6 +56,7 @@ export class WorkflowCompiler {
         });
       } else if (ev.eventType === 'keyboard' && typeof ev.inputData === 'string' && ev.inputData.length > 2) {
         const inputKey = `text_field_${stepIndex}`;
+        const fieldName = (ev.targetElement?.selector || ev.targetElement?.text || 'input').trim();
         detectedInputs[inputKey] = {
           type: 'string',
           description: `Text entered for ${ev.targetElement?.text || 'field'}`,
@@ -55,17 +66,24 @@ export class WorkflowCompiler {
           step: stepIndex++,
           name: `Enter ${ev.targetElement?.text || 'Input Text'}`,
           action: 'form.fill_text',
-          parameters: { field: ev.targetElement?.selector || ev.targetElement?.text, valueKey: inputKey },
+          parameters: { field: fieldName, valueKey: inputKey },
         });
       } else if (ev.eventType === 'assertion') {
+        const condition = String(ev.targetElement?.text ?? ev.inputData ?? '').trim();
+        if (!condition) {
+          throw new Error(`Compilation error at step ${stepIndex}: 'assertion' event requires non-empty condition.`);
+        }
         steps.push({
           step: stepIndex++,
-          name: `Verify ${ev.targetElement?.text || 'Expected State'}`,
+          name: `Verify ${condition}`,
           action: 'action.verify',
-          parameters: { condition: ev.targetElement?.text || ev.inputData || 'Condition verified' },
+          parameters: { condition, selector: ev.targetElement?.selector },
         });
       } else if (ev.eventType === 'click') {
-        const label = ev.targetElement?.text || 'Element';
+        const label = (ev.targetElement?.text || 'Element').trim();
+        if (!label && !ev.targetElement?.selector) {
+          throw new Error(`Compilation error at step ${stepIndex}: 'click' event requires target text or selector.`);
+        }
         if (/publish|upload|export|submit|delete|schedule|release/i.test(label)) {
           hasPublishOrExport = true;
         }
@@ -78,19 +96,24 @@ export class WorkflowCompiler {
       }
     }
 
-    const suggestedGate = hasPublishOrExport ? '2_approval_gate' : '1_notify';
+    // Gating: sample templates or sensitive operations strictly require approval gate
+    const suggestedGate = (hasPublishOrExport || isSample) ? '2_approval_gate' : '1_notify';
 
     const compiledSkill: SkillContract = {
       schemaVersion: '1.0',
       id: skillId,
       name: sessionName,
       version: '1.0.0',
-      description: `Synthesized skill compiled from ${events.length} demonstration actions in ${events[0]?.application || 'desktop'}.`,
+      description: isSample
+        ? `[Sample Template] Predefined demonstration template for ${sessionName}. Requires review before production execution.`
+        : `Synthesized skill compiled from ${events.length} demonstration actions in ${events[0]?.application || 'desktop'}.`,
       executionMode: 'browser_agent',
+      isSample,
+      status: isSample ? 'sample_template' : 'draft',
       inputs: detectedInputs,
       preconditions: ['target_application_accessible'],
       approvalGate: {
-        required: hasPublishOrExport,
+        required: hasPublishOrExport || isSample,
         level: suggestedGate,
         prompt: `Review proposed execution parameters before ${sessionName} executes.`,
       },

@@ -36,7 +36,7 @@ async function runTeachRecorderTests() {
   let authCookie = '';
   let authCsrfToken = '';
 
-  // Auth helper: Login to obtain valid session cookie
+  // Auth helper: Login to obtain valid creator session cookie
   const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -148,6 +148,8 @@ async function runTeachRecorderTests() {
     assert.strictEqual(compiledResult.skill.id, 'schedule_tiktok_short');
     assert.strictEqual(compiledResult.skill.executionMode, 'browser_agent');
     assert.strictEqual(compiledResult.skill.actions.length, 6);
+    assert.strictEqual(compiledResult.skill.isSample, false);
+    assert.strictEqual(compiledResult.skill.status, 'draft');
 
     assert.strictEqual(compiledResult.skill.actions[0].action, 'browser.navigate');
     assert.strictEqual(compiledResult.skill.actions[1].action, 'ui.click');
@@ -159,13 +161,11 @@ async function runTeachRecorderTests() {
 
   // Test 5: Recorder status endpoint is protected by authentication
   await test('Server Security: GET /api/teach/record/status strictly requires authentication', async () => {
-    // Unauthenticated request with invalid credentials
     const unauthRes = await fetch(`${BASE_URL}/api/teach/record/status`, {
       headers: { Authorization: 'Bearer invalid-token-12345' },
     });
     assert.strictEqual(unauthRes.status, 401, 'Invalid credentials call must return 401 Unauthorized');
 
-    // Authenticated request
     const authRes = await fetch(`${BASE_URL}/api/teach/record/status`, {
       headers: { Cookie: authCookie },
     });
@@ -194,10 +194,9 @@ async function runTeachRecorderTests() {
     assert.ok(data.error && data.error.includes('No demonstration actions were captured'), 'Error message must explain rejection');
   });
 
-  // Test 7: Skill Proposal Endpoint generates canonical plan and cryptographic approval token
-  let approvalToken = '';
-  let canonicalPlan: any = null;
-  await test('Approval Engine: POST /api/skills/:id/propose-run generates signed approval token', async () => {
+  // Test 7: Three-Phase Lifecycle Phase 1 - Proposing does NOT issue an execution token
+  let proposedId = '';
+  await test('Approval Lifecycle: POST /api/skills/:id/propose-run creates PROPOSED plan without token', async () => {
     const registry = new SkillRegistry();
     if (compiledResult) {
       registry.registerSkill(compiledResult.skill, true);
@@ -219,16 +218,37 @@ async function runTeachRecorderTests() {
     });
     assert.strictEqual(res.status, 200, `Expected 200 OK, got ${res.status}`);
     const data = await res.json();
-    assert.ok(data.approvalToken, 'Response must return signed approval token');
-    assert.ok(data.proposal, 'Response must return canonical proposal');
-    assert.strictEqual(data.proposal.skillId, 'schedule_tiktok_short');
-    approvalToken = data.approvalToken;
-    canonicalPlan = data.proposal;
+    assert.strictEqual(data.requiresApproval, true);
+    assert.ok(data.proposalId, 'Response must return proposalId');
+    assert.strictEqual(data.proposal.status, 'PROPOSED', 'Proposal initial status must strictly be PROPOSED');
+    assert.strictEqual(data.approvalToken, undefined, 'CRITICAL: propose-run MUST NOT issue an execution approval token');
+    proposedId = data.proposalId;
   });
 
-  // Test 8: Skill Run rejects execution when approval token is missing or forged
-  await test('Approval Engine: POST /api/skills/:id/run fails closed (HTTP 403) on missing/forged token', async () => {
-    // 8a: Missing token
+  // Test 8: Three-Phase Lifecycle Phase 2 - Explicit Human Approval issues cryptographic token
+  let approvalToken = '';
+  await test('Approval Lifecycle: POST /api/skills/:id/approve-run transitions to APPROVED and signs token', async () => {
+    const res = await fetch(`${BASE_URL}/api/skills/schedule_tiktok_short/approve-run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+      body: JSON.stringify({ proposalId: proposedId }),
+    });
+    assert.strictEqual(res.status, 200, `Expected 200 OK, got ${res.status}`);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.ok(data.approvalToken, 'approve-run MUST issue the signed approval token');
+    assert.strictEqual(data.proposal.status, 'APPROVED');
+    assert.ok(data.proposal.approvedByUserId, 'Approver user identity must be recorded');
+    approvalToken = data.approvalToken;
+  });
+
+  // Test 9: Execution Rejection on unapproved, forged, or mismatched tokens
+  await test('Approval Engine: POST /api/skills/:id/run fails closed (HTTP 403) on unapproved/tampered tokens', async () => {
+    // 9a: Missing token
     const noTokenRes = await fetch(`${BASE_URL}/api/skills/schedule_tiktok_short/run`, {
       method: 'POST',
       headers: {
@@ -242,7 +262,7 @@ async function runTeachRecorderTests() {
     });
     assert.strictEqual(noTokenRes.status, 403, 'Missing approval token must return 403 Forbidden');
 
-    // 8b: Forged token
+    // 9b: Forged token
     const forgedRes = await fetch(`${BASE_URL}/api/skills/schedule_tiktok_short/run`, {
       method: 'POST',
       headers: {
@@ -258,7 +278,72 @@ async function runTeachRecorderTests() {
     assert.strictEqual(forgedRes.status, 403, 'Forged approval token must return 403 Forbidden');
   });
 
-  // Test 9: Real Playwright Browser Automation executes genuine DOM navigation & inspection
+  // Test 10: Three-Phase Lifecycle Phase 3 - Single-use consumption and replay defense
+  await test('Approval Engine: Tokens are single-use; replay attempts fail closed (HTTP 403)', async () => {
+    // Modify status directly to CONSUMED to simulate already-consumed proposal
+    const approvalMgr = (await import('../src/auth/ApprovalManager.ts')).ApprovalManager.getInstance();
+    const proposal = approvalMgr.getSkillProposal(proposedId);
+    assert.ok(proposal, 'Proposal must exist');
+
+    // Test replay validation directly against ApprovalManager
+    const replayValidation = await approvalMgr.validateAndConsumeSkillApproval(
+      approvalToken,
+      'schedule_tiktok_short',
+      '1.0.0',
+      { input_file_3: 'watched_exports/master_ep1.mp4', text_field_4: 'New viral drop #lams' },
+      compiledResult!.skill.actions,
+      proposal.approvedByUserId || 'creator'
+    );
+    assert.strictEqual(replayValidation.valid, true, 'First consumption must succeed');
+    assert.strictEqual(proposal.status, 'CONSUMED');
+
+    // Second consumption must fail (replay attack rejected)
+    const secondValidation = await approvalMgr.validateAndConsumeSkillApproval(
+      approvalToken,
+      'schedule_tiktok_short',
+      '1.0.0',
+      { input_file_3: 'watched_exports/master_ep1.mp4', text_field_4: 'New viral drop #lams' },
+      compiledResult!.skill.actions,
+      proposal.approvedByUserId || 'creator'
+    );
+    assert.strictEqual(secondValidation.valid, false, 'Replay consumption MUST be rejected');
+    assert.ok(secondValidation.error?.includes('already been consumed'), 'Error must specify already consumed');
+  });
+
+  // Test 11: Machine-enforced sample template status & promotion
+  await test('Sample Templates: Marked non-production and require promotion to verified status', async () => {
+    const sampleComp = compiler.compile('Sample Template Skill', recordedEvents, { isSampleTemplate: true });
+    assert.strictEqual(sampleComp.skill.isSample, true);
+    assert.strictEqual(sampleComp.skill.status, 'sample_template');
+    assert.strictEqual(sampleComp.skill.approvalGate.required, true);
+
+    const registry = new SkillRegistry();
+    registry.registerSkill(sampleComp.skill, true);
+
+    // Call promotion endpoint
+    const promoRes = await fetch(`${BASE_URL}/api/skills/${sampleComp.skill.id}/promote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+    });
+    assert.strictEqual(promoRes.status, 200);
+    const promoData = await promoRes.json();
+    assert.strictEqual(promoData.skill.status, 'verified_production');
+    assert.strictEqual(promoData.skill.isSample, false);
+  });
+
+  // Test 12: Browser Prerequisite Check
+  await test('Playwright Adapter: Browser prerequisite diagnostic checks installed binary', async () => {
+    const prereqs = await PlaywrightBrowserAdapter.checkBrowserPrerequisites();
+    assert.strictEqual(typeof prereqs.ready, 'boolean');
+    assert.ok(prereqs.ready, 'System must have Edge or Chromium ready');
+    assert.ok(prereqs.channel === 'msedge' || prereqs.channel === 'chromium');
+  });
+
+  // Test 13: Real Playwright Browser Automation executes genuine DOM navigation & inspection
   await test('Playwright Adapter: Real headless browser navigates and verifies DOM state', async () => {
     const browserAdapter = new PlaywrightBrowserAdapter();
     try {
@@ -278,7 +363,7 @@ async function runTeachRecorderTests() {
     }
   });
 
-  // Test 10: Playwright & SkillRunner strictly report FAIL on unmet assertions (no false success)
+  // Test 14: Playwright & SkillRunner strictly report FAIL on unmet assertions (no false success)
   await test('Integrity Defense: Unmet DOM condition strictly throws and returns FAILED receipt', async () => {
     const testSkill = {
       schemaVersion: '1.0',

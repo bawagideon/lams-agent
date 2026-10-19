@@ -49,7 +49,13 @@ export class SkillRunner {
     const startedAt = new Date().toISOString();
     const stepsEvidence: StepEvidence[] = [];
 
-    // 1. Check Approval Gate
+    // 1. Check if skill is an unpromoted sample template in production
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+    if (isProd && (skill.isSample || skill.status === 'sample_template')) {
+      throw new Error(`Execution halted: Skill '${skill.name}' is an unverified sample template. Review and promote to verified production status before executing.`);
+    }
+
+    // 2. Check Approval Gate
     if (skill.approvalGate.required && skill.approvalGate.level !== '0_autonomous' && !isApprovedByHuman) {
       const pendingReceipt = generateEvidenceReceipt(
         missionId,
@@ -474,7 +480,9 @@ export class SkillRunner {
       // Real Handlers for Compiled Demonstration Actions via Playwright
       case 'browser.navigate': {
         const target = params.target || params.url || 'about:blank';
-        const allowLoopback = process.env.NODE_ENV !== 'production' || !!params.allowLoopback;
+        // Production loopback restriction: parameters can never override network policy
+        const isProdEnv = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        const allowLoopback = !isProdEnv && (process.env.ALLOW_TEST_LOOPBACK === 'true' || !!params.allowLoopback);
         const navResult = await this.browserAdapter.navigate(target, allowLoopback);
         return {
           navigated: true,

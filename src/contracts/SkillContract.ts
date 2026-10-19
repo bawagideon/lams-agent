@@ -22,6 +22,8 @@ export const SkillContractSchema = z.object({
   version: z.string(),
   description: z.string(),
   executionMode: z.enum(['deterministic_api', 'file_draft', 'browser_agent', 'desktop_demonstration']),
+  isSample: z.boolean().optional(),
+  status: z.enum(['draft', 'sample_template', 'verified_production']).optional(),
   inputs: z.record(z.string(), z.object({
     type: z.string(),
     description: z.string(),

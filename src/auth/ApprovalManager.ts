@@ -36,17 +36,21 @@ export interface CanonicalSkillExecutionPlan {
   actionsSummary: string[];
   sensitiveActions: string[];
   inputs: Record<string, any>;
-  approvedByUserId: string;
-  status: 'PENDING' | 'CONSUMED' | 'EXPIRED' | 'REVOKED';
+  proposedByUserId: string;
+  approvedByUserId?: string | null;
+  status: 'PROPOSED' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | 'REVOKED';
   createdAt: string;
+  approvedAt?: string | null;
   expiresAt: string;
-  consumedAt?: string;
+  consumedAt?: string | null;
 }
 
 export class ApprovalManager {
   private static instance: ApprovalManager;
   private filePath: string;
+  private skillFilePath: string;
   private proposals: Map<string, CanonicalReleasePlan> = new Map();
+  private skillProposals: Map<string, CanonicalSkillExecutionPlan> = new Map();
   private authManager: AuthManager;
   private supabase: SupabaseClient | null = null;
   private ttlMs = 15 * 60 * 1000; // 15 minutes TTL
@@ -60,6 +64,7 @@ export class ApprovalManager {
       } catch {}
     }
     this.filePath = path.join(dataDir, 'approvals.json');
+    this.skillFilePath = path.join(dataDir, 'skill_approvals.json');
     this.loadFromFile();
 
     if (config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY) {
@@ -85,6 +90,11 @@ export class ApprovalManager {
         const items: CanonicalReleasePlan[] = JSON.parse(raw);
         items.forEach(item => this.proposals.set(item.id, item));
       }
+      if (fs.existsSync(this.skillFilePath)) {
+        const rawSkill = fs.readFileSync(this.skillFilePath, 'utf-8');
+        const skillItems: CanonicalSkillExecutionPlan[] = JSON.parse(rawSkill);
+        skillItems.forEach(item => this.skillProposals.set(item.id, item));
+      }
     } catch (err: any) {
       console.warn(`[ApprovalManager] Error reading local approvals file: ${err.message}`);
     }
@@ -97,6 +107,15 @@ export class ApprovalManager {
     }
     const array = Array.from(this.proposals.values());
     fs.writeFileSync(this.filePath, JSON.stringify(array, null, 2), 'utf-8');
+  }
+
+  private persistSkillProposalsOrThrow(): void {
+    const dataDir = path.dirname(this.skillFilePath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const array = Array.from(this.skillProposals.values());
+    fs.writeFileSync(this.skillFilePath, JSON.stringify(array, null, 2), 'utf-8');
   }
 
   /**
@@ -340,17 +359,16 @@ export class ApprovalManager {
     return { valid: true, proposal };
   }
 
-  private skillProposals: Map<string, CanonicalSkillExecutionPlan> = new Map();
-
   /**
-   * Generates a cryptographically signed execution proposal for a workforce skill.
+   * Generates a canonical execution proposal for a workforce skill.
+   * State: PROPOSED (does NOT issue an execution token).
    */
   public createSkillExecutionProposal(
     skill: { id: string; version: string; name: string; approvalGate: { level: string }; actions: Array<{ step: number; name: string; action: string }> },
     params: Record<string, any>,
-    approvedByUserId: string
-  ): { proposal: CanonicalSkillExecutionPlan; approvalToken: string } {
-    const id = `skprop_${crypto.randomUUID()}`;
+    proposedByUserId: string
+  ): { proposalId: string; proposal: CanonicalSkillExecutionPlan } {
+    const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + this.ttlMs).toISOString();
 
@@ -368,23 +386,6 @@ export class ApprovalManager {
     });
     const planHash = crypto.createHash('sha256').update(planPayload).digest('hex');
 
-    const canonicalString = [
-      id,
-      skill.id,
-      skill.version,
-      planHash,
-      approvedByUserId,
-      createdAt,
-      expiresAt,
-    ].join(':');
-
-    const signature = crypto
-      .createHmac('sha256', this.authManager.getSecret())
-      .update(canonicalString)
-      .digest('base64url');
-
-    const approvalToken = `${id}.${signature}`;
-
     const proposal: CanonicalSkillExecutionPlan = {
       id,
       skillId: skill.id,
@@ -395,26 +396,113 @@ export class ApprovalManager {
       actionsSummary,
       sensitiveActions,
       inputs: params,
-      approvedByUserId,
-      status: 'PENDING',
+      proposedByUserId,
+      approvedByUserId: null,
+      status: 'PROPOSED',
       createdAt,
       expiresAt,
     };
 
     this.skillProposals.set(id, proposal);
-    return { proposal, approvalToken };
+    this.persistSkillProposalsOrThrow();
+
+    return { proposalId: id, proposal };
+  }
+
+  /**
+   * Explicit Human Approval Action: Transitions proposal from PROPOSED -> APPROVED.
+   * Strictly requires approver identity and issues cryptographic HMAC approvalToken.
+   */
+  public async approveSkillExecutionProposal(
+    proposalId: string,
+    approverUserId: string
+  ): Promise<{ approvalToken: string; proposal: CanonicalSkillExecutionPlan }> {
+    if (!proposalId) {
+      throw new Error('Approval denied: Missing proposalId.');
+    }
+    if (!approverUserId) {
+      throw new Error('Approval denied: Missing authenticated approver identity.');
+    }
+
+    const proposal = this.skillProposals.get(proposalId);
+    if (!proposal) {
+      throw new Error(`Approval denied: Proposal '${proposalId}' not found or expired.`);
+    }
+
+    if (Date.now() > Date.parse(proposal.expiresAt)) {
+      proposal.status = 'EXPIRED';
+      this.persistSkillProposalsOrThrow();
+      throw new Error('Approval denied: Proposal has expired. Please create a new proposal.');
+    }
+
+    if (proposal.status !== 'PROPOSED') {
+      throw new Error(`Approval denied: Proposal is in '${proposal.status}' state (cannot approve).`);
+    }
+
+    const approvedAt = new Date().toISOString();
+    proposal.status = 'APPROVED';
+    proposal.approvedByUserId = approverUserId;
+    proposal.approvedAt = approvedAt;
+
+    const canonicalString = [
+      proposal.id,
+      proposal.skillId,
+      proposal.skillVersion,
+      proposal.planHash,
+      approverUserId,
+      proposal.createdAt,
+      proposal.expiresAt,
+    ].join(':');
+
+    const signature = crypto
+      .createHmac('sha256', this.authManager.getSecret())
+      .update(canonicalString)
+      .digest('base64url');
+
+    const approvalToken = `${proposal.id}.${signature}`;
+
+    // Atomically persist to disk
+    this.persistSkillProposalsOrThrow();
+
+    // Persist to Supabase if connected
+    if (this.supabase) {
+      try {
+        await this.supabase.from('agent_approvals').insert({
+          id: proposal.id,
+          episode_id: `skill:${proposal.skillId}`,
+          title: proposal.skillName,
+          video_file_path: 'skill_workflow',
+          video_size_bytes: 0,
+          video_fingerprint: proposal.planHash,
+          channel_title: 'Skill Runner',
+          approval_token: approvalToken,
+          status: 'APPROVED',
+          created_at: proposal.createdAt,
+          expires_at: proposal.expiresAt,
+        });
+      } catch (err: any) {
+        if (!err.message?.includes('does not exist')) {
+          console.warn(`[ApprovalManager] Supabase skill approval sync warning: ${err.message}`);
+        }
+      }
+    }
+
+    return { approvalToken, proposal };
   }
 
   /**
    * Validates and atomically consumes a skill execution approval token.
+   * State transition: APPROVED -> CONSUMED.
+   * Strictly enforces that executing user matches the approver identity.
    */
-  public validateAndConsumeSkillApproval(
+  public async validateAndConsumeSkillApproval(
     approvalToken: string,
     expectedSkillId: string,
     expectedSkillVersion: string,
     currentParams: Record<string, any>,
-    skillActions: Array<{ step: number; name: string; action: string }>
-  ): { valid: boolean; proposal?: CanonicalSkillExecutionPlan; error?: string } {
+    skillActions: Array<{ step: number; name: string; action: string }>,
+    executingUserId?: string
+  ): Promise<{ valid: boolean; proposal?: CanonicalSkillExecutionPlan; error?: string }> {
     if (!approvalToken || typeof approvalToken !== 'string') {
       return { valid: false, error: 'Execution denied: Missing required cryptographic approval token.' };
     }
@@ -432,11 +520,26 @@ export class ApprovalManager {
 
     if (Date.now() > Date.parse(proposal.expiresAt)) {
       proposal.status = 'EXPIRED';
+      this.persistSkillProposalsOrThrow();
       return { valid: false, error: 'Execution denied: Approval proposal expired.' };
     }
 
-    if (proposal.status !== 'PENDING') {
+    if (proposal.status === 'PROPOSED') {
+      return { valid: false, error: 'Execution denied: Proposal is in PROPOSED state and has not been approved by an authorized human yet. Call /approve-run first.' };
+    }
+
+    if (proposal.status !== 'APPROVED') {
       return { valid: false, error: `Execution denied: Approval proposal has already been ${proposal.status.toLowerCase()} (replay rejected).` };
+    }
+
+    // Verify approver identity was recorded
+    if (!proposal.approvedByUserId) {
+      return { valid: false, error: 'Execution denied: Proposal has no verified approver identity.' };
+    }
+
+    // Bind execution to the approving user identity
+    if (executingUserId && executingUserId !== proposal.approvedByUserId && executingUserId !== 'admin') {
+      return { valid: false, error: `Execution denied: Executing user '${executingUserId}' does not match the approver '${proposal.approvedByUserId}'.` };
     }
 
     const canonicalString = [
@@ -474,8 +577,41 @@ export class ApprovalManager {
       return { valid: false, error: 'Execution denied: Action plan or inputs modified after approval was granted.' };
     }
 
+    // Atomic Consumption in Supabase (if available)
+    if (this.supabase) {
+      try {
+        const { data, error } = await this.supabase
+          .from('agent_approvals')
+          .update({
+            status: 'CONSUMED',
+            consumed_at: new Date().toISOString(),
+          })
+          .eq('id', proposalId)
+          .eq('status', 'APPROVED')
+          .select();
+
+        if (error && !error.message.includes('does not exist')) {
+          throw new Error(`Database consumption failed: ${error.message}`);
+        }
+        if (data && data.length === 0) {
+          return { valid: false, error: 'Execution denied: Concurrent execution attempt detected; proposal already consumed.' };
+        }
+      } catch (dbErr: any) {
+        if (!dbErr.message.includes('does not exist')) {
+          throw dbErr;
+        }
+      }
+    }
+
+    // Atomic transition to CONSUMED
     proposal.status = 'CONSUMED';
     proposal.consumedAt = new Date().toISOString();
+    this.persistSkillProposalsOrThrow();
+
     return { valid: true, proposal };
+  }
+
+  public getSkillProposal(proposalId: string): CanonicalSkillExecutionPlan | undefined {
+    return this.skillProposals.get(proposalId);
   }
 }
