@@ -482,10 +482,6 @@ export class ApprovalManager {
     }
 
     const approvedAt = new Date().toISOString();
-    proposal.status = 'APPROVED';
-    proposal.approvedByUserId = approverUserId;
-    proposal.approvedAt = approvedAt;
-
     const canonicalString = [
       proposal.id,
       proposal.skillId,
@@ -503,10 +499,9 @@ export class ApprovalManager {
 
     const approvalToken = `${proposal.id}.${signature}`;
 
-    // Atomically persist to disk
-    this.persistSkillProposalsOrThrow();
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
-    // Persist to Supabase if connected
+    // In production or when Supabase is connected, persist to authoritative database FIRST
     if (this.supabase) {
       try {
         const { error } = await this.supabase.from('agent_approvals').insert({
@@ -522,19 +517,25 @@ export class ApprovalManager {
           created_at: proposal.createdAt,
           expires_at: proposal.expiresAt,
         });
-        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
         if (error) {
           if (isProd || !error.message?.includes('does not exist')) {
             throw new Error(`Database approval persistence failed: ${error.message}`);
           }
         }
       } catch (err: any) {
-        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
         if (isProd || !err.message?.includes('does not exist')) {
           throw err;
         }
       }
+    } else if (isProd) {
+      throw new Error('Production error: Supabase is required for authoritative approval persistence.');
     }
+
+    // Only update local state once authoritative database operation has succeeded
+    proposal.status = 'APPROVED';
+    proposal.approvedByUserId = approverUserId;
+    proposal.approvedAt = approvedAt;
+    this.persistSkillProposalsOrThrow();
 
     return { approvalToken, proposal };
   }
@@ -563,8 +564,9 @@ export class ApprovalManager {
     }
 
     const [proposalId, providedSig] = parts;
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
-    // Check authoritative Supabase state if connected
+    // Check authoritative Supabase state if in production or connected
     if (this.supabase) {
       try {
         const { data: dbRows, error: fetchErr } = await this.supabase
@@ -572,22 +574,29 @@ export class ApprovalManager {
           .select('status')
           .eq('id', proposalId);
 
-        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
         if (fetchErr) {
           if (isProd || !fetchErr.message.includes('does not exist')) {
             throw new Error(`Authoritative database check failed: ${fetchErr.message}`);
+          }
+        } else if (!dbRows || dbRows.length === 0) {
+          if (isProd) {
+            return { valid: false, error: `Execution denied: Authoritative database record for proposal '${proposalId}' does not exist.` };
           }
         } else if (dbRows && dbRows.length > 0) {
           if (dbRows[0].status === 'CONSUMED') {
             return { valid: false, error: 'Execution denied: Approval proposal has already been consumed (replay rejected).' };
           }
+          if (dbRows[0].status !== 'APPROVED') {
+            return { valid: false, error: `Execution denied: Database proposal is in state '${dbRows[0].status}', expected 'APPROVED'.` };
+          }
         }
       } catch (dbCheckErr: any) {
-        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
         if (isProd || !dbCheckErr.message.includes('does not exist')) {
           throw dbCheckErr;
         }
       }
+    } else if (isProd) {
+      return { valid: false, error: 'Production authorization requires authoritative Supabase connection.' };
     }
 
     const proposal = this.skillProposals.get(proposalId);
@@ -667,7 +676,6 @@ export class ApprovalManager {
           .eq('status', 'APPROVED')
           .select();
 
-        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
         if (error) {
           if (isProd || !error.message.includes('does not exist')) {
             throw new Error(`Database consumption failed: ${error.message}`);
@@ -677,14 +685,13 @@ export class ApprovalManager {
           return { valid: false, error: 'Execution denied: Concurrent execution attempt detected; proposal already consumed.' };
         }
       } catch (dbErr: any) {
-        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
         if (isProd || !dbErr.message.includes('does not exist')) {
           throw dbErr;
         }
       }
     }
 
-    // Atomic transition to CONSUMED
+    // Atomic transition to CONSUMED in local store
     proposal.status = 'CONSUMED';
     proposal.consumedAt = new Date().toISOString();
     this.persistSkillProposalsOrThrow();

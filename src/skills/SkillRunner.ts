@@ -273,7 +273,11 @@ export class SkillRunner {
       'SUCCESS',
       startedAt,
       stepsEvidence,
-      outputData
+      outputData,
+      {
+        planHash: computeSkillPlanHash(skill),
+        passedPostconditions: skill.verification?.postconditions || [],
+      }
     );
 
     this.saveReceipt(successReceipt);

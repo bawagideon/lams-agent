@@ -1112,22 +1112,49 @@ export class MissionControlServer {
           return;
         }
 
-        if (receiptData.skillId && receiptData.skillId !== skill.id) {
+        if (!receiptData.skillId || receiptData.skillId !== skill.id) {
           res.writeHead(422, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
-            error: `Promotion denied: Evidence receipt '${testRunReceiptId}' was generated for skill '${receiptData.skillId}', not '${skill.id}'.`,
+            error: `Promotion denied: Evidence receipt '${testRunReceiptId}' was generated for skill '${receiptData.skillId || 'unknown'}', not matching target skill '${skill.id}'.`,
+          }));
+          return;
+        }
+
+        if (!receiptData.skillVersion || receiptData.skillVersion !== skill.version) {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: `Promotion denied: Evidence receipt '${testRunReceiptId}' was generated for skill version '${receiptData.skillVersion || 'unknown'}', not matching target version '${skill.version}'.`,
           }));
           return;
         }
 
         const currentPlanHash = computeSkillPlanHash(skill);
+        if (!receiptData.planHash || receiptData.planHash !== currentPlanHash) {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: `Promotion denied: Evidence receipt planHash '${receiptData.planHash || 'missing'}' does not match the canonical action plan hash '${currentPlanHash}' of skill '${skill.id}'. The tested workflow actions must match the promoted workflow exactly.`,
+          }));
+          return;
+        }
+
+        if (skill.verification?.postconditions && skill.verification.postconditions.length > 0) {
+          const passedSet = new Set(receiptData.passedPostconditions || []);
+          const missing = skill.verification.postconditions.filter((p: string) => !passedSet.has(p));
+          if (missing.length > 0) {
+            res.writeHead(422, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: `Promotion denied: Evidence receipt does not verify required postconditions: [${missing.join(', ')}].`,
+            }));
+            return;
+          }
+        }
 
         skill.verificationProof = {
           verifiedAt: new Date().toISOString(),
           verifiedByUserId: auth.session?.userId || 'creator',
           planHash: currentPlanHash,
           testRunReceiptId,
-          passedPostconditions: skill.verification.postconditions || [],
+          passedPostconditions: receiptData.passedPostconditions || [],
         };
         skill.status = 'verified_production';
         skill.isSample = false;

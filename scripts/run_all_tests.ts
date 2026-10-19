@@ -22,6 +22,8 @@ async function runAllTests() {
   // Environment and Git Context
   const gitCommit = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8' }).stdout?.trim() || 'unknown';
   const gitBranch = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf-8' }).stdout?.trim() || 'main';
+  const gitStatus = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' }).stdout?.trim() || '';
+  const isWorkingTreeClean = gitStatus.length === 0;
   const nodeVersion = process.version;
   const platform = `${process.platform} (${process.arch})`;
   const browserCheck = await PlaywrightBrowserAdapter.checkBrowserPrerequisites();
@@ -30,6 +32,7 @@ async function runAllTests() {
   console.log(` • Node Version:     ${nodeVersion}`);
   console.log(` • Platform / Arch:  ${platform}`);
   console.log(` • Git Commit:       ${gitCommit.substring(0, 8)} (${gitBranch})`);
+  console.log(` • Working Tree:     ${isWorkingTreeClean ? 'Clean (0 uncommitted changes)' : `DIRTY (${gitStatus.split('\n').length} uncommitted entries)`}`);
   console.log(` • Browser Engine:   ${browserCheck.ready ? `${browserCheck.channel} (Ready)` : `FAILED: ${browserCheck.error}`}`);
   console.log('----------------------------------------------------------------\n');
 
@@ -84,6 +87,7 @@ async function runAllTests() {
   console.log(`Status:           ${allPassed ? '✓ ALL SUITES PASSED (100%)' : '❌ ONE OR MORE SUITES FAILED'}`);
   console.log(`Total Runtime:    ${(totalDuration / 1000).toFixed(2)}s`);
   console.log(`Commit Hash:      ${gitCommit}`);
+  console.log(`Working Tree:     ${isWorkingTreeClean ? '✓ Clean' : '⚠ Dirty (Uncommitted changes)'}`);
   console.log('----------------------------------------------------------------');
 
   results.forEach((r, idx) => {

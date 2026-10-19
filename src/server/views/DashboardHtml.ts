@@ -504,6 +504,7 @@ export function renderDashboardHtml(
             <a id="btnDownloadVideo" download="demonstration_recording.webm" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer">
               <span>⬇ Download Video</span>
             </a>
+            <span id="recorderVideoSyncBadge" class="hidden text-[10px] font-semibold px-2.5 py-1 rounded-lg"></span>
             <button id="btnClearRecording" class="border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition">
               Reset
             </button>
@@ -1482,8 +1483,10 @@ export function renderDashboardHtml(
             if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
             if (e.target.closest('#view-skills')) return;
             const target = e.target;
-            const isPassword = target.type === 'password' || /secret|password|token|key/i.test(target.name || target.id || '');
-            const value = isPassword ? '[REDACTED_SECRET]' : String(target.value || '').substring(0, 100);
+            const isPassword = target.type === 'password' || /secret|password|token|key|auth|bearer|credential|card|cvv|ssn|pin/i.test(target.name || target.id || target.placeholder || target.getAttribute('aria-label') || '');
+            const rawVal = String(target.value || '');
+            const hasSensitivePattern = /(?:Bearer\s+[A-Za-z0-9\-_.]+|eyJ[A-Za-z0-9\-_.]+|[a-zA-Z0-9]{32,})/.test(rawVal);
+            const value = (isPassword || hasSensitivePattern) ? '[REDACTED_SECRET]' : rawVal.substring(0, 100);
             const selector = target.tagName.toLowerCase() + (target.id ? '#' + target.id : (target.name ? '[name="' + target.name + '"]' : ''));
             recordStudioEvent('keyboard', {
               value: value,
@@ -1530,16 +1533,35 @@ export function renderDashboardHtml(
           resolve(null);
           return;
         }
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
           if (recordedMediaChunks.length > 0) {
             const blob = new Blob(recordedMediaChunks, { type: 'video/webm' });
             const blobUrl = URL.createObjectURL(blob);
-            // Durably upload video recording to server
-            fetch('/api/teach/record/video?sessionId=' + encodeURIComponent('rec_' + Date.now()), {
-              method: 'POST',
-              headers: { 'Content-Type': 'video/webm' },
-              body: blob
-            }).catch(e => console.warn('Could not sync video to server:', e));
+            const badge = document.getElementById('recorderVideoSyncBadge');
+            if (badge) {
+              badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 animate-pulse';
+              badge.innerText = '⏳ Persisting video...';
+              badge.classList.remove('hidden');
+            }
+            try {
+              const upRes = await fetch('/api/teach/record/video?sessionId=' + encodeURIComponent('rec_' + Date.now()), {
+                method: 'POST',
+                headers: { 'Content-Type': 'video/webm' },
+                body: blob
+              });
+              if (!upRes.ok) throw new Error('HTTP ' + upRes.status);
+              const upData = await upRes.json();
+              if (badge) {
+                badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200';
+                badge.innerText = '✓ Video Stored (' + (upData.sizeMb || 0) + ' MB)';
+              }
+            } catch (syncErr) {
+              console.warn('Could not sync video to server:', syncErr);
+              if (badge) {
+                badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200';
+                badge.innerText = '⚠️ Video local only (' + syncErr.message + ')';
+              }
+            }
             resolve(blobUrl);
           } else {
             resolve(null);

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import type { SkillContract } from '../contracts/SkillContract.ts';
 
 export class SkillRegistry {
@@ -23,31 +24,65 @@ export class SkillRegistry {
   }
 
   private lastCustomSkillsMtimeMs = 0;
+  private lastCustomSkillsHash = '';
+  private loadedCustomSkillKeys: Set<string> = new Set();
 
   private reloadIfStale(): void {
     try {
       if (fs.existsSync(this.customSkillsFilePath)) {
-        const stat = fs.statSync(this.customSkillsFilePath);
-        if (stat.mtimeMs > this.lastCustomSkillsMtimeMs) {
-          this.loadCustomSkills();
+        const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
+        const hash = crypto.createHash('sha256').update(raw).digest('hex');
+        if (hash !== this.lastCustomSkillsHash) {
+          this.applyCustomSkillsContent(raw, hash);
         }
+      } else if (this.loadedCustomSkillKeys.size > 0) {
+        // File was deleted; purge all custom skills
+        for (const k of this.loadedCustomSkillKeys) {
+          this.skills.delete(k);
+        }
+        this.loadedCustomSkillKeys.clear();
+        this.lastCustomSkillsHash = '';
       }
     } catch {
       // ignore
     }
   }
 
+  private applyCustomSkillsContent(raw: string, hash: string): void {
+    try {
+      const list: SkillContract[] = JSON.parse(raw);
+      const newKeys = new Set<string>();
+
+      // Purge stale custom skill keys that are no longer in the file
+      for (const oldKey of this.loadedCustomSkillKeys) {
+        this.skills.delete(oldKey);
+      }
+      this.loadedCustomSkillKeys.clear();
+
+      for (const s of list) {
+        const keyVer = `${s.id}@${s.version}`;
+        this.skills.set(keyVer, s);
+        this.skills.set(s.id, s);
+        newKeys.add(keyVer);
+        newKeys.add(s.id);
+      }
+
+      this.loadedCustomSkillKeys = newKeys;
+      this.lastCustomSkillsHash = hash;
+      if (fs.existsSync(this.customSkillsFilePath)) {
+        this.lastCustomSkillsMtimeMs = fs.statSync(this.customSkillsFilePath).mtimeMs;
+      }
+    } catch (e: any) {
+      console.warn('[SkillRegistry] Could not parse custom skills:', e.message);
+    }
+  }
+
   private loadCustomSkills(): void {
     try {
       if (fs.existsSync(this.customSkillsFilePath)) {
-        const stat = fs.statSync(this.customSkillsFilePath);
-        this.lastCustomSkillsMtimeMs = stat.mtimeMs;
         const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
-        const list: SkillContract[] = JSON.parse(raw);
-        for (const s of list) {
-          this.skills.set(`${s.id}@${s.version}`, s);
-          this.skills.set(s.id, s);
-        }
+        const hash = crypto.createHash('sha256').update(raw).digest('hex');
+        this.applyCustomSkillsContent(raw, hash);
       }
     } catch (e: any) {
       console.warn('[SkillRegistry] Could not load custom skills:', e.message);
@@ -64,14 +99,16 @@ export class SkillRegistry {
       }
       existing = existing.filter(s => s.id !== skill.id);
       existing.push(skill);
+      const serialized = JSON.stringify(existing, null, 2);
       const tempPath = `${this.customSkillsFilePath}.${crypto.randomUUID()}.tmp`;
-      fs.writeFileSync(tempPath, JSON.stringify(existing, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, serialized, 'utf-8');
       try {
         fs.renameSync(tempPath, this.customSkillsFilePath);
       } catch {
         fs.copyFileSync(tempPath, this.customSkillsFilePath);
         try { fs.unlinkSync(tempPath); } catch {}
       }
+      this.lastCustomSkillsHash = crypto.createHash('sha256').update(serialized).digest('hex');
       if (fs.existsSync(this.customSkillsFilePath)) {
         this.lastCustomSkillsMtimeMs = fs.statSync(this.customSkillsFilePath).mtimeMs;
       }

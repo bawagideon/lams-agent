@@ -82,7 +82,20 @@ export class PlaywrightBrowserAdapter {
    * Strictly fails closed on DNS resolution failures.
    * Ignores allowLoopback flag in production environments.
    */
-  public async validateUrlSafety(targetUrl: string, requestedAllowLoopback = false): Promise<void> {
+  /**
+   * SSRF check: Disallows private IP ranges, link-local, carrier NAT, cloud metadata, and broadcast.
+   * Strictly fails closed on DNS resolution failures.
+   * Ignores allowLoopback flag in production environments.
+   * Returns authoritative resolved IP for connection-layer pinning.
+   */
+  public async validateUrlSafety(targetUrl: string, requestedAllowLoopback = false): Promise<{
+    isSafe: boolean;
+    resolvedIp: string;
+    port: number;
+    hostname: string;
+    protocol: string;
+    parsedUrl: URL;
+  }> {
     const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
     // Production restriction: allowLoopback is NEVER permitted in production
     const allowLoopback = isProd ? false : requestedAllowLoopback;
@@ -98,25 +111,34 @@ export class PlaywrightBrowserAdapter {
       throw new Error(`Disallowed protocol: '${parsed.protocol}'. Only http, https, and about: are supported.`);
     }
 
-    if (parsed.protocol === 'about:') return;
+    if (parsed.protocol === 'about:') {
+      return { isSafe: true, resolvedIp: '127.0.0.1', port: 0, hostname: 'about', protocol: 'about:', parsedUrl: parsed };
+    }
 
+    const defaultPort = parsed.protocol === 'https:' ? 443 : 80;
+    const port = parsed.port ? parseInt(parsed.port, 10) : defaultPort;
     const hostname = parsed.hostname.toLowerCase();
+    const cleanHost = hostname.replace(/^\[/, '').replace(/\]$/, '');
 
     // Check direct loopback hostnames
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]') {
+    if (cleanHost === 'localhost' || cleanHost === '127.0.0.1' || cleanHost === '::1') {
       if (!allowLoopback) {
         throw new Error(`SSRF blocked: Navigation to loopback (${hostname}) is prohibited.`);
       }
-      return;
+      return { isSafe: true, resolvedIp: '127.0.0.1', port, hostname, protocol: parsed.protocol, parsedUrl: parsed };
     }
 
     // Check if hostname is direct IP literal
-    const cleanHost = hostname.replace(/^\[/, '').replace(/\]$/, '');
     if (this.isPrivateIp(cleanHost)) {
       if (!allowLoopback || !this.isLoopbackIp(cleanHost)) {
         throw new Error(`SSRF blocked: Destination IP '${cleanHost}' is in a private, loopback, or metadata range.`);
       }
-      return;
+      return { isSafe: true, resolvedIp: cleanHost, port, hostname, protocol: parsed.protocol, parsedUrl: parsed };
+    }
+
+    // Direct public IP literal check (IPv4 or IPv6)
+    if (net.isIP(cleanHost)) {
+      return { isSafe: true, resolvedIp: cleanHost, port, hostname, protocol: parsed.protocol, parsedUrl: parsed };
     }
 
     // Resolve DNS and strictly check all returned address families (IPv4 A and IPv6 AAAA)
@@ -128,6 +150,8 @@ export class PlaywrightBrowserAdapter {
         for (const item of lookups) {
           if (item?.address) resolvedIps.add(item.address);
         }
+      } else if ((lookups as any)?.address) {
+        resolvedIps.add((lookups as any).address);
       }
     } catch {}
 
@@ -151,6 +175,7 @@ export class PlaywrightBrowserAdapter {
 
     let hasSafe = false;
     let hasUnsafe = false;
+    let pinnedIp: string | null = null;
 
     for (const ip of resolvedIps) {
       if (this.isPrivateIp(ip)) {
@@ -160,17 +185,32 @@ export class PlaywrightBrowserAdapter {
         }
       } else {
         hasSafe = true;
+        if (!pinnedIp) pinnedIp = ip;
       }
     }
 
     if (hasSafe && hasUnsafe) {
       throw new Error(`SSRF blocked: Host '${hostname}' resolved to mixed safe and private IPs (DNS rebinding attempt).`);
     }
+
+    if (!pinnedIp) {
+      if (allowLoopback && resolvedIps.size > 0) {
+        pinnedIp = Array.from(resolvedIps)[0];
+      } else {
+        throw new Error(`SSRF blocked: No safe public IP found for host '${hostname}'.`);
+      }
+    }
+
+    return { isSafe: true, resolvedIp: pinnedIp, port, hostname, protocol: parsed.protocol, parsedUrl: parsed };
   }
 
   private isLoopbackIp(ip: string): boolean {
     const clean = ip.toLowerCase();
     if (clean === '127.0.0.1' || clean === '::1' || clean.startsWith('127.')) return true;
+    if (clean.startsWith('::ffff:')) {
+      const rest = clean.substring(7);
+      if (rest.startsWith('127.') || rest === '7f00:1' || rest.startsWith('7f')) return true;
+    }
     return false;
   }
 
@@ -204,13 +244,26 @@ export class PlaywrightBrowserAdapter {
       return true; // IPv4/IPv6 translation
     }
 
-    let ipv4 = cleanIp;
+    let parts: number[] = [];
     if (cleanIp.startsWith('::ffff:')) {
-      ipv4 = cleanIp.substring(7);
+      const rest = cleanIp.substring(7);
+      if (rest.includes('.')) {
+        parts = rest.split('.').map(p => parseInt(p, 10));
+      } else if (rest.includes(':')) {
+        const hexParts = rest.split(':');
+        if (hexParts.length === 2) {
+          const v1 = parseInt(hexParts[0], 16);
+          const v2 = parseInt(hexParts[1], 16);
+          if (!isNaN(v1) && !isNaN(v2)) {
+            parts = [(v1 >> 8) & 0xff, v1 & 0xff, (v2 >> 8) & 0xff, v2 & 0xff];
+          }
+        }
+      }
+    } else {
+      parts = cleanIp.split('.').map(p => parseInt(p, 10));
     }
 
     // IPv4 checks
-    const parts = ipv4.split('.').map(p => parseInt(p, 10));
     if (parts.length === 4 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
       const [a, b, c, d] = parts;
       if (a === 0) return true; // 0.0.0.0/8 (Current network)
@@ -235,70 +288,101 @@ export class PlaywrightBrowserAdapter {
   private proxyServer: http.Server | null = null;
   private proxyPort = 0;
 
+  public async getProxyPortForTesting(allowLoopback = false): Promise<number> {
+    this.currentAllowLoopback = allowLoopback;
+    return this.ensureProxyServer();
+  }
+
   private async ensureProxyServer(): Promise<number> {
     if (this.proxyServer && this.proxyPort > 0) {
       return this.proxyPort;
     }
 
     return new Promise((resolve, reject) => {
-      const server = http.createServer((req, res) => {
-        const targetUrl = req.url || '';
-        this.validateUrlSafety(targetUrl, this.currentAllowLoopback)
-          .then(() => {
-            const proxyReq = http.request(
-              targetUrl,
-              {
-                method: req.method,
-                headers: req.headers,
+      const server = http.createServer(async (req, res) => {
+        try {
+          let targetUrl = req.url || '';
+          if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            targetUrl = `http://${req.headers.host || 'localhost'}${targetUrl}`;
+          }
+          const validation = await this.validateUrlSafety(targetUrl, this.currentAllowLoopback);
+          const targetIp = validation.resolvedIp;
+          const targetPort = validation.port || 80;
+
+          // Connection-layer pinning: Connect directly to the validated IP without re-resolving hostname
+          const proxyReq = http.request(
+            {
+              host: targetIp,
+              port: targetPort,
+              method: req.method,
+              path: validation.parsedUrl.pathname + validation.parsedUrl.search,
+              headers: {
+                ...req.headers,
+                host: validation.parsedUrl.host,
               },
-              (proxyRes) => {
-                res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
-                proxyRes.pipe(res);
-              }
-            );
-            proxyReq.on('error', (err) => {
-              res.writeHead(502, { 'Content-Type': 'text/plain' });
-              res.end(`Bad Gateway: ${err.message}`);
-            });
-            req.pipe(proxyReq);
-          })
-          .catch((err) => {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end(`SSRF Blocked: ${err.message}`);
+            },
+            (proxyRes) => {
+              res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+              proxyRes.pipe(res);
+            }
+          );
+          proxyReq.on('error', (err) => {
+            res.writeHead(502, { 'Content-Type': 'text/plain' });
+            res.end(`Bad Gateway: ${err.message}`);
           });
+          req.pipe(proxyReq);
+        } catch (err: any) {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end(`SSRF Blocked: ${err.message}`);
+        }
       });
 
-      server.on('connect', (req, clientSocket, head) => {
-        const [host, portStr] = (req.url || '').split(':');
-        const port = parseInt(portStr, 10) || 443;
-        const targetUrl = `https://${host}:${port}`;
+      server.on('connect', async (req, clientSocket, head) => {
+        try {
+          const urlStr = req.url || '';
+          let host: string;
+          let port: number;
 
-        this.validateUrlSafety(targetUrl, this.currentAllowLoopback)
-          .then(async () => {
-            let safeIp = host;
-            try {
-              const lookups: any = await this.dnsResolver.lookup(host, { all: true } as any);
-              if (Array.isArray(lookups) && lookups.length > 0) {
-                safeIp = lookups[0].address;
-              } else if (lookups && lookups.address) {
-                safeIp = lookups.address;
-              }
-            } catch {}
+          if (urlStr.startsWith('[')) {
+            // IPv6 authority format: [::1]:443
+            const closeBracket = urlStr.indexOf(']');
+            if (closeBracket === -1) {
+              clientSocket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+              clientSocket.destroy();
+              return;
+            }
+            host = urlStr.substring(0, closeBracket + 1);
+            const portStr = urlStr.substring(closeBracket + 1).replace(/^:/, '');
+            port = parseInt(portStr, 10) || 443;
+          } else {
+            const lastColon = urlStr.lastIndexOf(':');
+            if (lastColon !== -1) {
+              host = urlStr.substring(0, lastColon);
+              port = parseInt(urlStr.substring(lastColon + 1), 10) || 443;
+            } else {
+              host = urlStr;
+              port = 443;
+            }
+          }
 
-            const targetSocket = net.connect({ host: safeIp, port }, () => {
-              clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-              if (head && head.length > 0) targetSocket.write(head);
-              clientSocket.pipe(targetSocket);
-              targetSocket.pipe(clientSocket);
-            });
+          const targetUrl = `https://${host}:${port}`;
+          const validation = await this.validateUrlSafety(targetUrl, this.currentAllowLoopback);
+          const targetIp = validation.resolvedIp;
 
-            targetSocket.on('error', () => clientSocket.destroy());
-            clientSocket.on('error', () => targetSocket.destroy());
-          })
-          .catch(() => {
-            clientSocket.write('HTTP/1.1 403 Forbidden\r\n\r\nSSRF blocked');
-            clientSocket.destroy();
+          // Connection-layer pinning: Connect directly to the approved IP address with NO secondary DNS lookup
+          const targetSocket = net.connect({ host: targetIp, port }, () => {
+            clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+            if (head && head.length > 0) targetSocket.write(head);
+            clientSocket.pipe(targetSocket);
+            targetSocket.pipe(clientSocket);
           });
+
+          targetSocket.on('error', () => clientSocket.destroy());
+          clientSocket.on('error', () => targetSocket.destroy());
+        } catch (err: any) {
+          clientSocket.write(`HTTP/1.1 403 Forbidden\r\n\r\nSSRF blocked: ${err.message}`);
+          clientSocket.destroy();
+        }
       });
 
       server.listen(0, '127.0.0.1', () => {

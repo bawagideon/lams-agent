@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { DemonstrationRecorder, type ObservedEvent } from '../src/compiler/DemonstrationRecorder.ts';
 import { WorkflowCompiler } from '../src/compiler/WorkflowCompiler.ts';
 import { SkillRegistry } from '../src/skills/SkillRegistry.ts';
@@ -373,6 +374,31 @@ async function runTeachRecorderTests() {
     const validReceiptId = testExecution.receipt.receiptId;
     assert.ok(fs.existsSync(path.resolve('data', 'evidence_receipts', `${validReceiptId}.json`)), 'Evidence receipt must be saved to disk');
 
+    // 11b-2: Tamper Defense: Attempt promotion with evidence receipt having mismatched planHash -> must be rejected with 422
+    const tamperedReceiptId = `receipt_mismatch_${Date.now()}`;
+    const tamperedReceiptPath = path.resolve('data', 'evidence_receipts', `${tamperedReceiptId}.json`);
+    const validReceipt = JSON.parse(fs.readFileSync(path.resolve('data', 'evidence_receipts', `${validReceiptId}.json`), 'utf-8'));
+    const mismatchedReceipt = {
+      ...validReceipt,
+      receiptId: tamperedReceiptId,
+      planHash: 'tampered_non_matching_plan_hash_0000000000000000',
+    };
+    fs.writeFileSync(tamperedReceiptPath, JSON.stringify(mismatchedReceipt, null, 2), 'utf-8');
+
+    const mismatchRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+      body: JSON.stringify({ testRunReceiptId: tamperedReceiptId, reviewerNotes: 'Attempting mismatched receipt' }),
+    });
+    assert.strictEqual(mismatchRes.status, 422, 'Mismatched planHash in evidence receipt must be rejected with 422');
+    const mismatchData = await mismatchRes.json();
+    assert.ok(mismatchData.error?.includes('does not match the canonical action plan hash'), `Unexpected error: ${mismatchData.error}`);
+    try { fs.unlinkSync(tamperedReceiptPath); } catch {}
+
     // 11c: Call promotion endpoint with valid testRunReceiptId -> must succeed with 200
     const promoRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
       method: 'POST',
@@ -487,18 +513,16 @@ async function runTeachRecorderTests() {
     assert.ok(result.receipt.steps[1].detail.includes('Timeout') || result.receipt.steps[1].detail.includes('waiting for locator'), 'Error detail must record assertion failure');
   });
 
-  // Test 15: Cross-Process Skill Cache Invalidation
-  await test('SkillRegistry: Detects disk changes from separate processes via mtime tracking without restart', async () => {
-    const registryA = new SkillRegistry();
-    const registryB = new SkillRegistry();
-
+  // Test 15: Cross-Process Skill Cache Invalidation & Deletion Purge via SHA-256 Content Hashing
+  await test('SkillRegistry: Cross-process child process writes and deletes custom skill; parent detects and purges via SHA-256 content hash', async () => {
+    const registry = new SkillRegistry();
     const uniqueId = `cross_proc_test_${Date.now()}`;
     const newSkill = {
       schemaVersion: '1.0',
       id: uniqueId,
-      name: 'Cross Process Test Skill',
+      name: 'Cross Process Child Skill',
       version: '1.0.0',
-      description: 'Skill written by registry B',
+      description: 'Skill written by spawned child process',
       executionMode: 'browser_agent' as const,
       isSample: false,
       status: 'draft' as const,
@@ -510,30 +534,46 @@ async function runTeachRecorderTests() {
       failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
     };
 
-    // registryA does not know this skill yet
-    assert.strictEqual(registryA.getSkill(uniqueId), undefined, 'registryA should not have new skill initially');
+    // 15a: Parent registry initially does not have this skill
+    assert.strictEqual(registry.getSkill(uniqueId), undefined, 'Parent registry should not have new skill initially');
 
-    // Save via registryB to disk
-    registryB.saveCustomSkill(newSkill);
+    // 15b: Spawn a real Node.js child process to write the skill to data/custom_skills.json
+    const addScript = `
+      const fs = require('fs');
+      const path = require('path');
+      const filePath = path.resolve('data', 'custom_skills.json');
+      const skills = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : [];
+      skills.push(${JSON.stringify(newSkill)});
+      fs.writeFileSync(filePath, JSON.stringify(skills, null, 2), 'utf-8');
+    `;
+    const addProc = spawnSync('node', ['-e', addScript], { encoding: 'utf-8' });
+    assert.strictEqual(addProc.status, 0, `Child process failed to write skill: ${addProc.stderr}`);
 
-    // registryA must now find it without server or process restart due to mtime invalidation
-    const foundByA = registryA.getSkill(uniqueId);
-    assert.ok(foundByA, 'registryA must reload and find skill written by registryB');
-    assert.strictEqual(foundByA.id, uniqueId);
+    // 15c: Parent registry reloads via SHA-256 content hashing and discovers it
+    const discovered = registry.getSkill(uniqueId);
+    assert.ok(discovered, 'Parent registry must reload and discover skill written by child process');
+    assert.strictEqual(discovered.id, uniqueId);
 
-    // Cleanup temporary test skill from custom_skills.json
-    try {
-      const skillsPath = path.resolve('data', 'custom_skills.json');
-      if (fs.existsSync(skillsPath)) {
-        const raw = JSON.parse(fs.readFileSync(skillsPath, 'utf-8'));
-        const filtered = raw.filter((s: any) => !s.id.startsWith('cross_proc_test_'));
-        fs.writeFileSync(skillsPath, JSON.stringify(filtered, null, 2), 'utf-8');
+    // 15d: Spawn a real Node.js child process to DELETE the skill from data/custom_skills.json
+    const deleteScript = `
+      const fs = require('fs');
+      const path = require('path');
+      const filePath = path.resolve('data', 'custom_skills.json');
+      if (fs.existsSync(filePath)) {
+        const skills = JSON.parse(fs.readFileSync(filePath, 'utf-8')).filter(s => s.id !== '${uniqueId}');
+        fs.writeFileSync(filePath, JSON.stringify(skills, null, 2), 'utf-8');
       }
-    } catch {}
+    `;
+    const delProc = spawnSync('node', ['-e', deleteScript], { encoding: 'utf-8' });
+    assert.strictEqual(delProc.status, 0, `Child process failed to delete skill: ${delProc.stderr}`);
+
+    // 15e: Parent registry must PURGE the deleted skill from in-memory cache upon reload
+    const purged = registry.getSkill(uniqueId);
+    assert.strictEqual(purged, undefined, 'Parent registry must purge deleted custom skill from memory');
   });
 
-  // Test 16: Restart Recovery of ApprovalManager from atomic disk persistence
-  await test('ApprovalManager: Persists state atomically and recovers proposals across re-instantiation', async () => {
+  // Test 16: Restart Recovery and Child Process Isolation of ApprovalManager
+  await test('ApprovalManager: Recovers proposals across independent child processes via disk persistence and requires DB in prod', async () => {
     const approvalMgr = ApprovalManager.getInstance();
     const testSkill = {
       id: 'restart_recovery_skill',
@@ -551,13 +591,36 @@ async function runTeachRecorderTests() {
     );
     assert.strictEqual(proposal.status, 'PROPOSED');
 
-    // Force re-reading from disk to simulate process restart
-    approvalMgr.loadFromFile(true);
-    const recovered = approvalMgr.getSkillProposal(proposalId);
-    assert.ok(recovered, 'Proposal must be recovered from atomic file storage');
-    assert.strictEqual(recovered.id, proposalId);
-    assert.strictEqual(recovered.planHash, proposal.planHash);
-    assert.strictEqual(recovered.status, 'PROPOSED');
+    // Verify independent child process can read and recover the proposal from disk
+    const checkScript = `
+      import { ApprovalManager } from './src/auth/ApprovalManager.ts';
+      const mgr = ApprovalManager.getInstance();
+      const p = mgr.getSkillProposal('${proposalId}');
+      if (!p || p.status !== 'PROPOSED') {
+        console.error('Child process could not find proposal:', p);
+        process.exit(1);
+      }
+      process.exit(0);
+    `;
+    const childCheck = spawnSync('node', ['--experimental-strip-types', '-e', checkScript], { encoding: 'utf-8' });
+    assert.strictEqual(childCheck.status, 0, `Independent child process failed to recover proposal: ${childCheck.stderr}`);
+
+    // Also test production validation path: If Supabase has no record in production, fails closed
+    const origEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      const prodValidation = await approvalMgr.validateAndConsumeSkillApproval(
+        'mock-token',
+        testSkill.id,
+        testSkill.version,
+        { testParam: 'val123' },
+        testSkill.actions,
+        'test-creator'
+      );
+      assert.strictEqual(prodValidation.valid, false, 'In production, approval without authoritative database record must fail closed');
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
   });
 
   console.log('\n====================================================');

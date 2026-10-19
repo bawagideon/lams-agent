@@ -1,4 +1,5 @@
 import http from 'node:http';
+import net from 'node:net';
 import assert from 'node:assert';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -253,6 +254,118 @@ async function runSsrfTests() {
       browserAdapter.setDnsResolverForTesting(null);
     }
   });
+
+  // Helper for sending CONNECT request to proxy
+  async function sendConnectToProxy(proxyPort: number, targetAuthority: string): Promise<{ raw: string; statusCode: number }> {
+    return new Promise((resolve) => {
+      const socket = net.connect({ host: '127.0.0.1', port: proxyPort }, () => {
+        socket.write(`CONNECT ${targetAuthority} HTTP/1.1\r\nHost: ${targetAuthority}\r\n\r\n`);
+      });
+      let data = '';
+      socket.on('data', (chunk) => {
+        data += chunk.toString();
+        socket.destroy();
+      });
+      socket.on('close', () => {
+        const match = data.match(/^HTTP\/1\.[01]\s+(\d{3})/);
+        const statusCode = match ? parseInt(match[1], 10) : 0;
+        resolve({ raw: data, statusCode });
+      });
+      socket.on('error', (err) => {
+        resolve({ raw: err.message, statusCode: 0 });
+      });
+    });
+  }
+
+  // Helper for sending standard HTTP request through proxy
+  async function sendHttpViaProxy(proxyPort: number, targetUrl: string): Promise<{ statusCode: number; body: string }> {
+    return new Promise((resolve) => {
+      const parsed = new URL(targetUrl);
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: proxyPort,
+          method: 'GET',
+          path: targetUrl,
+          headers: {
+            host: parsed.host,
+          },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk) => (body += chunk.toString()));
+          res.on('end', () => resolve({ statusCode: res.statusCode || 0, body }));
+        }
+      );
+      req.on('error', (err) => resolve({ statusCode: 500, body: err.message }));
+      req.end();
+    });
+  }
+
+  // 11. Proxy Server: Direct HTTP request to private/loopback targets rejected with 403 Forbidden
+  await test('PlaywrightBrowserAdapter Proxy: HTTP request to private/loopback targets rejected at connection layer with 403', async () => {
+    const proxyPort = await browserAdapter.getProxyPortForTesting(false);
+    
+    const targets = [
+      'http://127.0.0.1:4200/secret',
+      'http://169.254.169.254/latest/meta-data',
+      'http://10.0.0.1/admin',
+    ];
+
+    for (const target of targets) {
+      const res = await sendHttpViaProxy(proxyPort, target);
+      assert.strictEqual(res.statusCode, 403, `Expected HTTP 403 for ${target}, got ${res.statusCode}`);
+      assert(res.body.includes('SSRF Blocked'), `Expected SSRF Blocked message, got: ${res.body}`);
+    }
+  });
+
+  // 12. Proxy Server: HTTPS CONNECT to loopback rejected with 403 Forbidden
+  await test('PlaywrightBrowserAdapter Proxy: HTTPS CONNECT to 127.0.0.1 rejected with 403 Forbidden', async () => {
+    const proxyPort = await browserAdapter.getProxyPortForTesting(false);
+    const res = await sendConnectToProxy(proxyPort, '127.0.0.1:4200');
+    assert.strictEqual(res.statusCode, 403, `Expected CONNECT 403, got ${res.statusCode} (${res.raw})`);
+    assert(res.raw.includes('SSRF blocked'), `Expected SSRF blocked error in response, got: ${res.raw}`);
+  });
+
+  // 13. Proxy Server: HTTPS CONNECT with IPv6 authority literal [::1]:port parsed & rejected with 403 Forbidden
+  await test('PlaywrightBrowserAdapter Proxy: HTTPS CONNECT with IPv6 authority literal [::1]:8080 rejected with 403', async () => {
+    const proxyPort = await browserAdapter.getProxyPortForTesting(false);
+    const res = await sendConnectToProxy(proxyPort, '[::1]:8080');
+    assert.strictEqual(res.statusCode, 403, `Expected CONNECT 403 for IPv6 loopback, got ${res.statusCode} (${res.raw})`);
+    assert(res.raw.includes('SSRF blocked'), `Expected SSRF blocked error in response, got: ${res.raw}`);
+  });
+
+  // 14. Proxy Server: HTTPS CONNECT to Cloud Metadata 169.254.169.254:80 rejected with 403 Forbidden
+  await test('PlaywrightBrowserAdapter Proxy: HTTPS CONNECT to Cloud Metadata (169.254.169.254:80) rejected with 403', async () => {
+    const proxyPort = await browserAdapter.getProxyPortForTesting(false);
+    const res = await sendConnectToProxy(proxyPort, '169.254.169.254:80');
+    assert.strictEqual(res.statusCode, 403, `Expected CONNECT 403 for Cloud Metadata, got ${res.statusCode} (${res.raw})`);
+    assert(res.raw.includes('SSRF blocked'), `Expected SSRF blocked error in response, got: ${res.raw}`);
+  });
+
+  // 15. Proxy Server: HTTPS CONNECT with DNS rebinding host rejected with 403 Forbidden
+  await test('PlaywrightBrowserAdapter Proxy: HTTPS CONNECT to rebinding host rejected with 403 Forbidden', async () => {
+    const proxyPort = await browserAdapter.getProxyPortForTesting(false);
+    try {
+      browserAdapter.setDnsResolverForTesting({
+        lookup: async () => [
+          { address: '93.184.216.34', family: 4 },
+          { address: '127.0.0.1', family: 4 },
+        ],
+        resolve4: async () => ['93.184.216.34', '127.0.0.1'],
+        resolve6: async () => [],
+      });
+
+      const res = await sendConnectToProxy(proxyPort, 'rebind-target.example.org:443');
+      assert.strictEqual(res.statusCode, 403, `Expected CONNECT 403 for rebinding host, got ${res.statusCode}`);
+      assert(res.raw.includes('SSRF blocked'), `Expected SSRF blocked in response, got: ${res.raw}`);
+    } finally {
+      browserAdapter.setDnsResolverForTesting(null);
+    }
+  });
+
+  // Cleanup adapter
+  await browserAdapter.close();
 
   console.log('\n====================================================');
   console.log(`SSRF Security Results: ${passed} / ${total} tests passed.`);
