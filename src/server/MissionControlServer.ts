@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { config } from '../config/env.ts';
 import { YTEngineBridge } from '../bridge/YTEngineBridge.ts';
 import { CapCutAdapter } from '../adapters/media/CapCutAdapter.ts';
 import { YouTubeLiveClient } from '../adapters/youtube/YouTubeLiveClient.ts';
