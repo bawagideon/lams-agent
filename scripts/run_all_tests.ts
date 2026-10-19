@@ -24,6 +24,13 @@ async function runAllTests() {
   const gitBranch = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf-8' }).stdout?.trim() || 'main';
   const gitStatus = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' }).stdout?.trim() || '';
   const isWorkingTreeClean = gitStatus.length === 0;
+  const enforceClean = process.argv.includes('--enforce-clean') || process.env.ENFORCE_CLEAN_TREE === 'true';
+
+  if (enforceClean && !isWorkingTreeClean) {
+    console.error(`\n❌ PRE-RUN CHECK FAILED: Working tree has uncommitted modifications (--enforce-clean active):\n${gitStatus}`);
+    process.exit(1);
+  }
+
   const nodeVersion = process.version;
   const platform = `${process.platform} (${process.arch})`;
   const browserCheck = await PlaywrightBrowserAdapter.checkBrowserPrerequisites();
@@ -33,6 +40,7 @@ async function runAllTests() {
   console.log(` • Platform / Arch:  ${platform}`);
   console.log(` • Git Commit:       ${gitCommit.substring(0, 8)} (${gitBranch})`);
   console.log(` • Working Tree:     ${isWorkingTreeClean ? 'Clean (0 uncommitted changes)' : `DIRTY (${gitStatus.split('\n').length} uncommitted entries)`}`);
+  console.log(` • Enforce Clean:    ${enforceClean ? 'YES (Active)' : 'NO'}`);
   console.log(` • Browser Engine:   ${browserCheck.ready ? `${browserCheck.channel} (Ready)` : `FAILED: ${browserCheck.error}`}`);
   console.log('----------------------------------------------------------------\n');
 
@@ -87,7 +95,11 @@ async function runAllTests() {
   console.log(`Status:           ${allPassed ? '✓ ALL SUITES PASSED (100%)' : '❌ ONE OR MORE SUITES FAILED'}`);
   console.log(`Total Runtime:    ${(totalDuration / 1000).toFixed(2)}s`);
   console.log(`Commit Hash:      ${gitCommit}`);
-  console.log(`Working Tree:     ${isWorkingTreeClean ? '✓ Clean' : '⚠ Dirty (Uncommitted changes)'}`);
+  const postGitStatus = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' }).stdout?.trim() || '';
+  const isPostTreeClean = postGitStatus.length === 0;
+
+  console.log(`Working Tree In:  ${isWorkingTreeClean ? '✓ Clean' : '⚠ Dirty (Uncommitted changes)'}`);
+  console.log(`Working Tree Out: ${isPostTreeClean ? '✓ Clean' : '⚠ Dirty (Uncommitted changes or test residue)'}`);
   console.log('----------------------------------------------------------------');
 
   results.forEach((r, idx) => {
@@ -99,6 +111,12 @@ async function runAllTests() {
   if (!allPassed) {
     process.exit(1);
   }
+
+  if (enforceClean && !isPostTreeClean) {
+    console.error(`\n❌ POST-RUN CHECK FAILED: Test execution left uncommitted artifacts or dirty files in working tree:\n${postGitStatus}`);
+    process.exit(1);
+  }
+
   process.exit(0);
 }
 

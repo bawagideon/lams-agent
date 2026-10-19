@@ -9,7 +9,7 @@ export class SkillRegistry {
 
   constructor() {
     this.registerDefaultSkills();
-    this.loadCustomSkills();
+    this.reloadCustomSkills(true);
   }
 
   public registerSkill(skill: SkillContract, persist = false): void {
@@ -19,6 +19,8 @@ export class SkillRegistry {
     this.skills.set(skill.id, skill);
 
     if (persist) {
+      this.loadedCustomSkillKeys.add(key);
+      this.loadedCustomSkillKeys.add(skill.id);
       this.saveCustomSkill(skill);
     }
   }
@@ -27,30 +29,42 @@ export class SkillRegistry {
   private lastCustomSkillsHash = '';
   private loadedCustomSkillKeys: Set<string> = new Set();
 
-  private reloadIfStale(): void {
+  /**
+   * Authoritative reload method for custom skills.
+   * Handles file existence, file deletion, invalid JSON, and duplicate IDs safely.
+   */
+  public reloadCustomSkills(force = false): void {
     try {
-      if (fs.existsSync(this.customSkillsFilePath)) {
-        const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
-        const hash = crypto.createHash('sha256').update(raw).digest('hex');
-        if (hash !== this.lastCustomSkillsHash) {
-          this.applyCustomSkillsContent(raw, hash);
+      if (!fs.existsSync(this.customSkillsFilePath)) {
+        if (this.loadedCustomSkillKeys.size > 0 || force) {
+          for (const k of this.loadedCustomSkillKeys) {
+            this.skills.delete(k);
+          }
+          this.loadedCustomSkillKeys.clear();
+          this.lastCustomSkillsHash = '';
+          this.lastCustomSkillsMtimeMs = 0;
         }
-      } else if (this.loadedCustomSkillKeys.size > 0) {
-        // File was deleted; purge all custom skills
-        for (const k of this.loadedCustomSkillKeys) {
-          this.skills.delete(k);
-        }
-        this.loadedCustomSkillKeys.clear();
-        this.lastCustomSkillsHash = '';
+        return;
       }
-    } catch {
-      // ignore
+
+      const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
+      const hash = crypto.createHash('sha256').update(raw).digest('hex');
+
+      if (force || hash !== this.lastCustomSkillsHash) {
+        this.applyCustomSkillsContent(raw, hash);
+      }
+    } catch (e: any) {
+      console.warn('[SkillRegistry] Error reloading custom skills:', e.message);
     }
   }
 
   private applyCustomSkillsContent(raw: string, hash: string): void {
     try {
-      const list: SkillContract[] = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new Error('Custom skills JSON must be an array of SkillContract objects.');
+      }
+      const list: SkillContract[] = parsed;
       const newKeys = new Set<string>();
 
       // Purge stale custom skill keys that are no longer in the file
@@ -60,6 +74,7 @@ export class SkillRegistry {
       this.loadedCustomSkillKeys.clear();
 
       for (const s of list) {
+        if (!s || !s.id || !s.version) continue;
         const keyVer = `${s.id}@${s.version}`;
         this.skills.set(keyVer, s);
         this.skills.set(s.id, s);
@@ -77,27 +92,19 @@ export class SkillRegistry {
     }
   }
 
-  private loadCustomSkills(): void {
-    try {
-      if (fs.existsSync(this.customSkillsFilePath)) {
-        const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
-        const hash = crypto.createHash('sha256').update(raw).digest('hex');
-        this.applyCustomSkillsContent(raw, hash);
-      }
-    } catch (e: any) {
-      console.warn('[SkillRegistry] Could not load custom skills:', e.message);
-    }
-  }
-
   private saveCustomSkill(skill: SkillContract): void {
     try {
       const dir = path.dirname(this.customSkillsFilePath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       let existing: SkillContract[] = [];
       if (fs.existsSync(this.customSkillsFilePath)) {
-        existing = JSON.parse(fs.readFileSync(this.customSkillsFilePath, 'utf-8'));
+        try {
+          const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) existing = parsed;
+        } catch {}
       }
-      existing = existing.filter(s => s.id !== skill.id);
+      existing = existing.filter(s => s && s.id !== skill.id);
       existing.push(skill);
       const serialized = JSON.stringify(existing, null, 2);
       const tempPath = `${this.customSkillsFilePath}.${crypto.randomUUID()}.tmp`;
@@ -118,16 +125,12 @@ export class SkillRegistry {
   }
 
   public getSkill(idOrKey: string, options?: { forceFresh?: boolean }): SkillContract | undefined {
-    if (options?.forceFresh) {
-      this.loadCustomSkills();
-    } else {
-      this.reloadIfStale();
-    }
+    this.reloadCustomSkills(!!options?.forceFresh);
     return this.skills.get(idOrKey);
   }
 
   public listSkills(): SkillContract[] {
-    this.reloadIfStale();
+    this.reloadCustomSkills(false);
     const seen = new Set<string>();
     const list: SkillContract[] = [];
     for (const [key, skill] of this.skills.entries()) {

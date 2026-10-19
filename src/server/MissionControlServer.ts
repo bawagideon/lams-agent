@@ -13,6 +13,7 @@ import { DemonstrationRecorder, type ObservedEvent } from '../compiler/Demonstra
 import { SkillRegistry } from '../skills/SkillRegistry.ts';
 import { SkillRunner } from '../skills/SkillRunner.ts';
 import { computeSkillPlanHash } from '../contracts/SkillContract.ts';
+import { verifyEvidenceReceipt } from '../contracts/EvidenceReceipt.ts';
 import { AuthManager, type AuthSession } from '../auth/AuthManager.ts';
 import { ApprovalManager } from '../auth/ApprovalManager.ts';
 import { DurableJobQueue } from '../jobs/DurableJobQueue.ts';
@@ -906,17 +907,70 @@ export class MissionControlServer {
     if (method === 'POST' && url.pathname === '/api/teach/record/video') {
       const auth = this.checkAuth(req, res, 'approve');
       if (!auth.authorized) return;
+      let targetPath: string | null = null;
       try {
+        const rawSessionId = url.searchParams.get('sessionId') || `rec_${Date.now()}`;
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(rawSessionId)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid sessionId format. Must match /^[a-zA-Z0-9_-]{1,64}$/' }));
+          return;
+        }
+
         const recordingsDir = path.resolve('data', 'recordings');
         if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir, { recursive: true });
-        const sessionId = url.searchParams.get('sessionId') || `rec_${Date.now()}`;
-        const targetPath = path.join(recordingsDir, `${sessionId}.webm`);
+        targetPath = path.resolve(recordingsDir, `${rawSessionId}.webm`);
+        if (!targetPath.startsWith(recordingsDir + path.sep)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Path traversal attempt detected.' }));
+          return;
+        }
+
+        const MAX_BYTES = 500 * 1024 * 1024; // 500 MB limit
+        let bytesWritten = 0;
         const fileStream = fs.createWriteStream(targetPath);
-        await pipeline(req, fileStream);
+
+        await new Promise<void>((resolve, reject) => {
+          let aborted = false;
+          req.on('data', (chunk: Buffer) => {
+            bytesWritten += chunk.length;
+            if (bytesWritten > MAX_BYTES) {
+              aborted = true;
+              req.destroy(new Error('Payload Too Large: Stream exceeded 500 MB limit.'));
+              fileStream.destroy();
+              if (targetPath && fs.existsSync(targetPath)) {
+                try { fs.unlinkSync(targetPath); } catch {}
+              }
+            }
+          });
+
+          fileStream.on('error', (err) => {
+            if (targetPath && fs.existsSync(targetPath)) {
+              try { fs.unlinkSync(targetPath); } catch {}
+            }
+            reject(err);
+          });
+
+          fileStream.on('finish', () => {
+            if (!aborted) resolve();
+          });
+
+          req.pipe(fileStream);
+        });
+
+        const sizeMb = Math.round((bytesWritten / (1024 * 1024)) * 100) / 100;
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, filePath: targetPath }));
+        res.end(JSON.stringify({
+          success: true,
+          sessionId: rawSessionId,
+          byteCount: bytesWritten,
+          sizeMb,
+        }));
       } catch (err: any) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        if (targetPath && fs.existsSync(targetPath)) {
+          try { fs.unlinkSync(targetPath); } catch {}
+        }
+        const isTooLarge = err.message?.includes('500 MB') || err.message?.includes('Payload Too Large');
+        res.writeHead(isTooLarge ? 413 : 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       }
       return;
@@ -1108,6 +1162,16 @@ export class MissionControlServer {
           res.writeHead(422, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
             error: `Promotion denied: Evidence receipt '${testRunReceiptId}' was not found or did not confirm SUCCESS status.`,
+          }));
+          return;
+        }
+
+        // Cryptographically verify receipt HMAC signature
+        const verification = verifyEvidenceReceipt(receiptData, this.authManager.getSecret());
+        if (!verification.valid) {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: `Promotion denied: Evidence receipt '${testRunReceiptId}' cryptographic verification failed: ${verification.error}`,
           }));
           return;
         }

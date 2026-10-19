@@ -252,6 +252,11 @@ export class ApprovalManager {
       status: 'PENDING',
     };
 
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+    if (isProd && !this.supabase) {
+      throw new Error('Production release proposal requires authoritative Supabase connection.');
+    }
+
     // Store in Supabase if connected
     if (this.supabase) {
       try {
@@ -311,6 +316,41 @@ export class ApprovalManager {
     }
 
     const [proposalId, providedSig] = parts;
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
+    // Authoritative Supabase persistence check in production mode
+    if (this.supabase) {
+      try {
+        const { data: dbRows, error: fetchErr } = await this.supabase
+          .from('agent_approvals')
+          .select('status')
+          .eq('id', proposalId);
+
+        if (fetchErr) {
+          if (isProd || !fetchErr.message.includes('does not exist')) {
+            throw new Error(`Authoritative database check failed: ${fetchErr.message}`);
+          }
+        } else if (!dbRows || dbRows.length === 0) {
+          if (isProd) {
+            return { valid: false, error: `Release denied: Authoritative database record for proposal '${proposalId}' does not exist.` };
+          }
+        } else if (dbRows && dbRows.length > 0) {
+          if (dbRows[0].status === 'CONSUMED') {
+            return { valid: false, error: 'Release denied: Approval proposal has already been consumed (replay rejected).' };
+          }
+          if (dbRows[0].status !== 'PENDING' && dbRows[0].status !== 'APPROVED') {
+            return { valid: false, error: `Release denied: Database proposal is in state '${dbRows[0].status}', expected 'PENDING'.` };
+          }
+        }
+      } catch (dbCheckErr: any) {
+        if (isProd || !dbCheckErr.message.includes('does not exist')) {
+          throw dbCheckErr;
+        }
+      }
+    } else if (isProd) {
+      return { valid: false, error: 'Production release authorization requires authoritative Supabase connection.' };
+    }
+
     const proposal = this.proposals.get(proposalId);
     if (!proposal) {
       return { valid: false, error: 'Release denied: Approval proposal not found or expired.' };

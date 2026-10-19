@@ -204,82 +204,152 @@ export class PlaywrightBrowserAdapter {
     return { isSafe: true, resolvedIp: pinnedIp, port, hostname, protocol: parsed.protocol, parsedUrl: parsed };
   }
 
-  private isLoopbackIp(ip: string): boolean {
-    const clean = ip.toLowerCase();
-    if (clean === '127.0.0.1' || clean === '::1' || clean.startsWith('127.')) return true;
-    if (clean.startsWith('::ffff:')) {
-      const rest = clean.substring(7);
-      if (rest.startsWith('127.') || rest === '7f00:1' || rest.startsWith('7f')) return true;
+  private parseIpv6Words(cleanIp: string): { words: number[]; embeddedIpv4?: number[] } | null {
+    let clean = cleanIp.toLowerCase().replace(/^\[/, '').replace(/\]$/, '').trim();
+    let embeddedIpv4: number[] | undefined;
+
+    // Extract embedded IPv4 representation at the end, e.g. ::ffff:127.0.0.1 or 0:0:0:0:0:ffff:192.168.1.1
+    const lastColon = clean.lastIndexOf(':');
+    if (lastColon !== -1 && clean.substring(lastColon + 1).includes('.')) {
+      const rawV4 = clean.substring(lastColon + 1);
+      const parts = rawV4.split('.').map(p => parseInt(p, 10));
+      if (parts.length === 4 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
+        const h1 = ((parts[0] << 8) | parts[1]).toString(16);
+        const h2 = ((parts[2] << 8) | parts[3]).toString(16);
+        clean = clean.substring(0, lastColon) + ':' + h1 + ':' + h2;
+        embeddedIpv4 = parts;
+      } else {
+        return null;
+      }
     }
+
+    const doubleColon = clean.indexOf('::');
+    let words: number[] = [];
+    if (doubleColon !== -1) {
+      if (clean.indexOf('::', doubleColon + 2) !== -1) return null; // Multiple double-colons are invalid
+      const leftStr = clean.substring(0, doubleColon);
+      const rightStr = clean.substring(doubleColon + 2);
+      const left = leftStr ? leftStr.split(':') : [];
+      const right = rightStr ? rightStr.split(':') : [];
+      const missing = 8 - (left.length + right.length);
+      if (missing < 0) return null;
+      const allHex = [...left, ...Array(missing).fill('0'), ...right];
+      if (allHex.length !== 8) return null;
+      words = allHex.map(w => parseInt(w || '0', 16));
+    } else {
+      const allHex = clean.split(':');
+      if (allHex.length !== 8) return null;
+      words = allHex.map(w => parseInt(w, 16));
+    }
+
+    if (words.some(w => isNaN(w) || w < 0 || w > 0xffff)) {
+      return null;
+    }
+
+    // If embedded IPv4 was not dot-formatted but w0..w4 are 0 and w5 is 0 or 0xffff
+    if (!embeddedIpv4 && words[0] === 0 && words[1] === 0 && words[2] === 0 && words[3] === 0 && words[4] === 0 && (words[5] === 0 || words[5] === 0xffff)) {
+      embeddedIpv4 = [(words[6] >> 8) & 0xff, words[6] & 0xff, (words[7] >> 8) & 0xff, words[7] & 0xff];
+    }
+
+    return { words, embeddedIpv4 };
+  }
+
+  private isPrivateIpv4Octets(parts: number[]): boolean {
+    if (parts.length !== 4 || parts.some(p => isNaN(p) || p < 0 || p > 255)) return true;
+    const [a, b, c, d] = parts;
+    if (a === 0) return true; // 0.0.0.0/8 (Current network)
+    if (a === 10) return true; // 10.0.0.0/8 (Private RFC1918)
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 (Carrier-grade NAT RFC6598)
+    if (a === 127) return true; // 127.0.0.0/8 (Loopback)
+    if (a === 169 && b === 254) return true; // 169.254.0.0/16 (Link-local & Cloud Metadata 169.254.169.254)
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 (Private RFC1918)
+    if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24 (IETF Protocol)
+    if (a === 192 && b === 0 && c === 2) return true; // 192.0.2.0/24 (TEST-NET-1)
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16 (Private RFC1918)
+    if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 (Benchmark)
+    if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24 (TEST-NET-2)
+    if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24 (TEST-NET-3)
+    if (a >= 224 && a <= 239) return true; // 224.0.0.0/4 (Multicast)
+    if (a >= 240) return true; // 240.0.0.0/4 (Reserved & 255.255.255.255 Broadcast)
+    return false;
+  }
+
+  private isLoopbackIp(ip: string): boolean {
+    const clean = ip.toLowerCase().replace(/^\[/, '').replace(/\]$/, '').trim();
+    if (clean === '127.0.0.1' || clean === '::1' || clean.startsWith('127.')) return true;
+
+    if (net.isIP(clean) === 4) {
+      const parts = clean.split('.').map(p => parseInt(p, 10));
+      return parts.length === 4 && parts[0] === 127;
+    }
+
+    const parsed = this.parseIpv6Words(clean);
+    if (parsed) {
+      const { words, embeddedIpv4 } = parsed;
+      if (words.slice(0, 7).every(w => w === 0) && words[7] === 1) return true;
+      if (embeddedIpv4 && embeddedIpv4[0] === 127) return true;
+    }
+
     return false;
   }
 
   /**
    * Comprehensive validation covering RFC 1918, RFC 6598, RFC 3927, Cloud Metadata (169.254.169.254),
-   * IPv4-mapped IPv6, ULA, and multicast/broadcast ranges.
+   * IPv4-mapped IPv6 (compressed/expanded), ULA, and multicast/broadcast ranges.
    */
   public isPrivateIp(ip: string): boolean {
-    const cleanIp = ip.toLowerCase().trim();
+    const cleanIp = ip.toLowerCase().replace(/^\[/, '').replace(/\]$/, '').trim();
 
-    // IPv6 checks
-    if (cleanIp === '::1' || cleanIp === '::' || cleanIp === '0:0:0:0:0:0:0:1' || cleanIp === '0:0:0:0:0:0:0:0') {
+    // Check IPv4
+    if (net.isIP(cleanIp) === 4) {
+      const parts = cleanIp.split('.').map(p => parseInt(p, 10));
+      return this.isPrivateIpv4Octets(parts);
+    }
+
+    // Parse and normalize IPv6
+    const parsed = this.parseIpv6Words(cleanIp);
+    if (!parsed) {
+      return false;
+    }
+
+    const { words, embeddedIpv4 } = parsed;
+
+    // Check embedded IPv4 (e.g. IPv4-mapped ::ffff:x.x.x.x, IPv4-compatible ::x.x.x.x)
+    if (embeddedIpv4 && this.isPrivateIpv4Octets(embeddedIpv4)) {
       return true;
     }
-    if (cleanIp.startsWith('fe8') || cleanIp.startsWith('fe9') || cleanIp.startsWith('fea') || cleanIp.startsWith('feb')) {
-      return true; // Link-local fe80::/10
-    }
-    if (cleanIp.startsWith('fc') || cleanIp.startsWith('fd')) {
-      return true; // Unique Local Address (ULA) fc00::/7
-    }
-    if (cleanIp.startsWith('ff')) {
-      return true; // Multicast ff00::/8
-    }
-    if (cleanIp.startsWith('2001:db8:')) {
-      return true; // Documentation
-    }
-    if (cleanIp.startsWith('100::')) {
-      return true; // Discard-only
-    }
-    if (cleanIp.startsWith('64:ff9b:')) {
-      return true; // IPv4/IPv6 translation
+
+    const [w0, w1, w2, w3, w4, w5, w6, w7] = words;
+
+    // Unspecified :: and Loopback ::1 (compressed or expanded)
+    if (words.every(w => w === 0)) return true; // ::
+    if (words.slice(0, 7).every(w => w === 0) && w7 === 1) return true; // ::1
+
+    // Link-local unicast fe80::/10 (0xfe80 - 0xfebf)
+    if ((w0 & 0xffc0) === 0xfe80) return true;
+
+    // Unique Local Address (ULA) fc00::/7 (0xfc00 - 0xfdff)
+    if ((w0 & 0xfe00) === 0xfc00) return true;
+
+    // Multicast ff00::/8
+    if ((w0 & 0xff00) === 0xff00) return true;
+
+    // Documentation 2001:db8::/32
+    if (w0 === 0x2001 && w1 === 0x0db8) return true;
+
+    // Discard-only 100::/64
+    if (w0 === 0x0100 && w1 === 0 && w2 === 0 && w3 === 0) return true;
+
+    // 6to4 2002::/16 check embedded IPv4
+    if (w0 === 0x2002) {
+      const v4 = [(w1 >> 8) & 0xff, w1 & 0xff, (w2 >> 8) & 0xff, w2 & 0xff];
+      if (this.isPrivateIpv4Octets(v4)) return true;
     }
 
-    let parts: number[] = [];
-    if (cleanIp.startsWith('::ffff:')) {
-      const rest = cleanIp.substring(7);
-      if (rest.includes('.')) {
-        parts = rest.split('.').map(p => parseInt(p, 10));
-      } else if (rest.includes(':')) {
-        const hexParts = rest.split(':');
-        if (hexParts.length === 2) {
-          const v1 = parseInt(hexParts[0], 16);
-          const v2 = parseInt(hexParts[1], 16);
-          if (!isNaN(v1) && !isNaN(v2)) {
-            parts = [(v1 >> 8) & 0xff, v1 & 0xff, (v2 >> 8) & 0xff, v2 & 0xff];
-          }
-        }
-      }
-    } else {
-      parts = cleanIp.split('.').map(p => parseInt(p, 10));
-    }
-
-    // IPv4 checks
-    if (parts.length === 4 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
-      const [a, b, c, d] = parts;
-      if (a === 0) return true; // 0.0.0.0/8 (Current network)
-      if (a === 10) return true; // 10.0.0.0/8 (Private RFC1918)
-      if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 (Carrier-grade NAT RFC6598)
-      if (a === 127) return true; // 127.0.0.0/8 (Loopback)
-      if (a === 169 && b === 254) return true; // 169.254.0.0/16 (Link-local & Cloud Metadata 169.254.169.254)
-      if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 (Private RFC1918)
-      if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24 (IETF Protocol)
-      if (a === 192 && b === 0 && c === 2) return true; // 192.0.2.0/24 (TEST-NET-1)
-      if (a === 192 && b === 168) return true; // 192.168.0.0/16 (Private RFC1918)
-      if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 (Benchmark)
-      if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24 (TEST-NET-2)
-      if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24 (TEST-NET-3)
-      if (a >= 224 && a <= 239) return true; // 224.0.0.0/4 (Multicast)
-      if (a >= 240) return true; // 240.0.0.0/4 (Reserved & 255.255.255.255 Broadcast)
+    // NAT64 / Well-known prefix 64:ff9b::/96
+    if (w0 === 0x0064 && w1 === 0xff9b && w2 === 0 && w3 === 0 && w4 === 0 && w5 === 0) {
+      const v4 = [(w6 >> 8) & 0xff, w6 & 0xff, (w7 >> 8) & 0xff, w7 & 0xff];
+      if (this.isPrivateIpv4Octets(v4)) return true;
     }
 
     return false;

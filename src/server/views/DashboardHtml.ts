@@ -89,12 +89,30 @@ export function renderDashboardHtml(
     ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
   </style>
 </head>
-<body class="h-full flex overflow-hidden antialiased">
+<body class="h-full flex flex-col md:flex-row overflow-hidden antialiased bg-[#f8fafc]">
+
+  <!-- Mobile Top Bar (< 768px) -->
+  <header class="md:hidden flex items-center justify-between px-5 py-3.5 bg-white border-b border-gray-200/90 z-30 flex-shrink-0 shadow-2xs">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-full bg-[#4338ca] flex items-center justify-center font-black text-white text-base shadow-sm">
+        L
+      </div>
+      <span class="text-base font-extrabold text-gray-900 tracking-tight">LAMS HQ</span>
+    </div>
+    <button id="mobileNavToggle" aria-label="Toggle Navigation Menu" class="p-2 text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- Mobile Sidebar Backdrop -->
+  <div id="sidebarBackdrop" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-30 hidden md:hidden transition-opacity"></div>
 
   <!-- ============================================================ -->
   <!-- 1. LEFT SIDEBAR NAVIGATION (Matching Home@2x.png)           -->
   <!-- ============================================================ -->
-  <aside class="w-64 flex-shrink-0 bg-white border-r border-gray-200/80 flex flex-col justify-between h-full z-20">
+  <aside id="mainSidebar" class="fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200/80 flex flex-col justify-between h-full transform -translate-x-full md:relative md:translate-x-0 md:flex-shrink-0 transition-transform duration-200 ease-in-out shadow-xl md:shadow-none">
     <div>
       <!-- Brand Header -->
       <a href="/" class="px-6 py-6 flex items-center gap-3 block hover:opacity-90 transition">
@@ -158,7 +176,7 @@ export function renderDashboardHtml(
         <div class="bg-[#fef7ee] border border-[#f5dfc6] rounded-2xl p-4 space-y-2.5 shadow-sm">
           <h4 class="text-sm font-bold text-amber-950 leading-tight">YouTube isn't connected</h4>
           <p class="text-xs text-amber-900/80 leading-snug">Sign in once so I can schedule your videos.</p>
-          <a href="${channel.authUrl}" class="block text-center bg-[#78350f] hover:bg-[#60290a] text-white text-xs font-semibold py-2 px-3 rounded-xl transition shadow-sm">
+          <a href="${escapeHtml(channel.authUrl)}" class="block text-center bg-[#78350f] hover:bg-[#60290a] text-white text-xs font-semibold py-2 px-3 rounded-xl transition shadow-sm">
             Connect YouTube
           </a>
         </div>
@@ -168,8 +186,8 @@ export function renderDashboardHtml(
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             <h4 class="text-xs font-bold text-emerald-950">YouTube connected</h4>
           </div>
-          <p class="text-[11px] text-emerald-800 truncate">${channel.title}</p>
-          <a href="${channel.authUrl}" class="block text-[11px] text-emerald-700 font-semibold hover:underline">
+          <p class="text-[11px] text-emerald-800 truncate">${escapeHtml(channel.title)}</p>
+          <a href="${escapeHtml(channel.authUrl)}" class="block text-[11px] text-emerald-700 font-semibold hover:underline">
             Manage channel
           </a>
         </div>
@@ -180,15 +198,15 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 2. CENTER WORKSPACE (Matching Home@2x.png)                  -->
   <!-- ============================================================ -->
-  <main class="flex-1 flex flex-col h-full overflow-y-auto bg-[#f8fafc] px-12 py-10 space-y-10">
+  <main class="flex-1 flex flex-col h-full overflow-y-auto bg-[#f8fafc] px-4 py-6 md:px-12 md:py-10 space-y-6 md:space-y-10">
 
     <!-- TAB 1: HOME VIEW (Default) -->
     <div id="view-home" class="space-y-10 ${initialTab === 'home' ? 'fade-in' : 'hidden'}">
       
       <!-- Greeting Header -->
       <div>
-        <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">${greeting}, Lams</h1>
-        <p class="text-sm text-gray-500 mt-1">${subtitle}</p>
+        <h1 class="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">${escapeHtml(greeting)}, Lams</h1>
+        <p class="text-xs md:text-sm text-gray-500 mt-1">${escapeHtml(subtitle)}</p>
       </div>
 
       <!-- SECTION: Next up (Hero Card) -->
@@ -209,8 +227,8 @@ export function renderDashboardHtml(
           <div class="flex-1 flex flex-col justify-between py-1">
             <div>
               <span class="text-[11px] font-extrabold text-indigo-600 uppercase tracking-wider">READY FOR YOUR REVIEW</span>
-              <h3 class="text-2xl font-black text-gray-900 mt-1 leading-snug">${currentEpisode.title}</h3>
-              <p class="text-xs text-gray-600 mt-2 leading-relaxed max-w-xl line-clamp-2">${currentEpisode.topic}</p>
+              <h3 class="text-2xl font-black text-gray-900 mt-1 leading-snug">${escapeHtml(currentEpisode.title)}</h3>
+              <p class="text-xs text-gray-600 mt-2 leading-relaxed max-w-xl line-clamp-2">${escapeHtml(currentEpisode.topic)}</p>
 
               <!-- Stages Pills -->
               <div class="flex flex-wrap items-center gap-2 mt-4 text-xs font-medium">
@@ -223,8 +241,8 @@ export function renderDashboardHtml(
             </div>
 
             <!-- Action Buttons -->
-            <div class="flex items-center gap-3 mt-6 pt-2">
-              <a href="/episodes/${currentEpisode.id}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
+            <div class="flex items-center gap-3 mt-6 pt-2 flex-wrap">
+              <a href="/episodes/${escapeHtml(currentEpisode.id)}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
                 <span>Watch the scenes</span>
               </a>
               <button id="btnHeroCapCut" data-action="assemble-capcut" data-episode-id="${escapeHtml(currentEpisode.id)}" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-5 py-2.5 rounded-xl transition">
@@ -249,7 +267,7 @@ export function renderDashboardHtml(
 
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           ${recentEpisodes.map((ep, idx) => `
-            <a href="/episodes/${ep.id}" class="bg-white border border-gray-200/80 rounded-2xl p-3.5 shadow-sm card-hover cursor-pointer flex flex-col justify-between block">
+            <a href="/episodes/${escapeHtml(ep.id)}" class="bg-white border border-gray-200/80 rounded-2xl p-3.5 shadow-sm card-hover cursor-pointer flex flex-col justify-between block">
               <div>
                 <!-- Gradient Thumbnail -->
                 <div class="h-28 rounded-xl bg-gradient-to-r ${gradients[idx % gradients.length]} mb-3 shadow-inner relative">
@@ -257,7 +275,7 @@ export function renderDashboardHtml(
                     ${ep.completedScenesCount}/${ep.scenesCount}
                   </div>
                 </div>
-                <h4 class="text-sm font-bold text-gray-900 truncate" title="${ep.title}">${ep.title}</h4>
+                <h4 class="text-sm font-bold text-gray-900 truncate" title="${escapeHtml(ep.title)}">${escapeHtml(ep.title)}</h4>
               </div>
               <div class="mt-3">
                 <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-block ${
@@ -340,7 +358,7 @@ export function renderDashboardHtml(
             <div class="flex items-center gap-3">
               <span class="w-2 h-2 rounded-full ${channel.isConnected ? 'bg-emerald-500' : 'bg-amber-400'}"></span>
               <span class="text-gray-800">
-                ${channel.isConnected ? `YouTube connected to <strong>${channel.title}</strong>` : 'YouTube needs you to sign in again'}
+                ${channel.isConnected ? `YouTube connected to <strong>${escapeHtml(channel.title)}</strong>` : 'YouTube needs you to sign in again'}
               </span>
             </div>
             <span class="${channel.isConnected ? 'text-gray-400' : 'text-amber-800 font-semibold'}">
@@ -353,7 +371,7 @@ export function renderDashboardHtml(
             <div class="flex items-center gap-3">
               <span class="w-2 h-2 rounded-full ${exportedVideos.length > 0 ? 'bg-emerald-500' : 'bg-gray-300'}"></span>
               <span class="text-gray-800">
-                ${exportedVideos.length > 0 ? `Found a finished video in your exports folder: <strong>${exportedVideos[0].fileName}</strong>` : 'Waiting for an exported video in watched_exports/'}
+                ${exportedVideos.length > 0 ? `Found a finished video in your exports folder: <strong>${escapeHtml(exportedVideos[0].fileName)}</strong>` : 'Waiting for an exported video in watched_exports/'}
               </span>
             </div>
             <span class="${exportedVideos.length > 0 ? 'text-emerald-600 font-semibold' : 'text-gray-400'}">
@@ -425,7 +443,7 @@ export function renderDashboardHtml(
                   'bg-gray-100 text-gray-600'
                 }">${escapeHtml(ep.status)}</span>
               </div>
-              <a href="/episodes/${ep.id}" class="block group">
+              <a href="/episodes/${escapeHtml(ep.id)}" class="block group">
                 <h3 class="text-base font-bold text-gray-900 mt-2 leading-snug group-hover:text-[#4338ca] transition">${escapeHtml(ep.title)}</h3>
               </a>
               <p class="text-xs text-gray-500 mt-1 line-clamp-2">${escapeHtml(ep.topic)}</p>
@@ -437,7 +455,7 @@ export function renderDashboardHtml(
                 <span>${new Date(ep.createdAt).toLocaleDateString()}</span>
               </div>
               <div class="flex items-center gap-2">
-                <a href="/episodes/${ep.id}" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
+                <a href="/episodes/${escapeHtml(ep.id)}" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
                   Watch
                 </a>
                 <button data-action="assemble-capcut" data-episode-id="${escapeHtml(ep.id)}" class="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold py-2 rounded-xl border border-gray-200 transition">
@@ -508,6 +526,17 @@ export function renderDashboardHtml(
             <button id="btnClearRecording" class="border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition">
               Reset
             </button>
+          </div>
+        </div>
+
+        <!-- Truthful Teach Mode Notice & Environment Scope -->
+        <div class="bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3.5 text-xs text-indigo-900 flex items-start gap-3">
+          <span class="text-base flex-shrink-0">💡</span>
+          <div class="space-y-0.5">
+            <span class="font-bold">Transparent Demonstration Environment:</span>
+            <p class="text-indigo-800 leading-relaxed text-[11px]">
+              Screen video recording captures your full screen or designated app window for visual verification replay. Browser events within the portal are observed live. For desktop applications (such as CapCut Desktop) or native system dialogs, assemble or refine steps with the <strong>Action Step Palette</strong> or <strong>Quick Presets</strong> before compilation.
+            </p>
           </div>
         </div>
 
@@ -722,7 +751,7 @@ export function renderDashboardHtml(
             <div>
               <span class="font-bold text-gray-900">YouTube Channel Link Check</span>
               <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_yt_status</span>
-              <p class="text-[11px] text-gray-500 mt-0.5">${channel.isConnected ? `Connected to ${channel.title}` : 'Channel authorization pending'}</p>
+              <p class="text-[11px] text-gray-500 mt-0.5">${channel.isConnected ? `Connected to ${escapeHtml(channel.title)}` : 'Channel authorization pending'}</p>
             </div>
           </div>
           <span class="${channel.isConnected ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : 'text-amber-800 bg-amber-50 border-amber-200'} px-3 py-1 rounded-full font-semibold border">
@@ -756,10 +785,10 @@ export function renderDashboardHtml(
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
             ${channel.isConnected
-              ? `Channel: <strong>${channel.title}</strong> (${channel.subscriberCount || '0'} subs). All video releases upload in private mode for safety.`
+              ? `Channel: <strong>${escapeHtml(channel.title)}</strong> (${escapeHtml(channel.subscriberCount || '0')} subs). All video releases upload in private mode for safety.`
               : 'Sign in with Lams Google account to enable private uploads and scheduled publishing.'}
           </p>
-          <a href="${channel.authUrl}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition shadow-sm">
+          <a href="${escapeHtml(channel.authUrl)}" class="inline-block bg-gray-50 hover:bg-gray-100 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl border border-gray-200 transition shadow-sm">
             ${channel.isConnected ? 'Re-link Channel' : 'Connect YouTube Account'}
           </a>
         </div>
@@ -1102,6 +1131,10 @@ export function renderDashboardHtml(
           history.pushState({ tab: tabId }, '', targetUrl);
         }
       }
+
+      if (typeof window.__closeMobileSidebar === 'function') {
+        window.__closeMobileSidebar();
+      }
     }
 
     // Handle browser Back / Forward buttons
@@ -1328,7 +1361,11 @@ export function renderDashboardHtml(
       const btn = document.getElementById('btnConfirmRelease');
       const msg = document.getElementById('releaseStatusMessage');
       btn.disabled = true;
-      btn.innerText = 'Publishing Privately...';
+      btn.innerText = 'Uploading to YouTube...';
+
+      msg.className = 'bg-indigo-50 text-indigo-900 border border-indigo-200 p-3 rounded-xl text-xs flex items-center gap-2';
+      msg.innerHTML = '<span class="animate-spin text-sm">⏳</span> <span><strong>Uploading:</strong> Transferring master video with verified content hash to YouTube...</span>';
+      msg.classList.remove('hidden');
 
       try {
         const token = window.__activeApprovalToken || '';
@@ -1344,22 +1381,22 @@ export function renderDashboardHtml(
         if (data.error) throw new Error(data.error);
 
         msg.className = 'bg-emerald-50 text-emerald-900 border border-emerald-200 p-3 rounded-xl text-xs space-y-1';
-        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with Video ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to ' + (data.newStatus || 'Scheduled') + ' in Supabase.';
+        msg.innerHTML = '<strong>✓ Release Published to YouTube (Private Review)!</strong><br/>Video ID: <code class="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300">' + clientEscapeHtml(data.videoId) + '</code>. Status updated to <strong>' + clientEscapeHtml(data.newStatus || 'Scheduled') + '</strong>.';
         msg.classList.remove('hidden');
 
-        btn.innerText = 'Release Published';
-        appendChatMessage('agent', '✓ Episode published privately to YouTube! Video ID: ' + data.videoId);
+        btn.innerText = '✓ Published';
+        appendChatMessage('agent', '✓ Episode published privately to YouTube in Private Review! Video ID: ' + data.videoId);
 
         setTimeout(() => {
           closeReleaseRoom();
           window.location.reload();
         }, 3000);
       } catch (err) {
-        msg.className = 'bg-red-50 text-red-900 border border-red-200 p-3 rounded-xl text-xs';
-        msg.innerHTML = '<strong>Publishing Error:</strong> ' + err.message;
+        msg.className = 'bg-rose-50 text-rose-900 border border-rose-200 p-3 rounded-xl text-xs space-y-1.5';
+        msg.innerHTML = '<div><strong>Release Failed:</strong> ' + clientEscapeHtml(err.message) + '</div><div class="text-[11px] text-rose-700">Release did not proceed. Check preflight criteria or retry when ready.</div>';
         msg.classList.remove('hidden');
         btn.disabled = false;
-        btn.innerText = 'Publish as Private Release';
+        btn.innerText = 'Retry Publishing as Private Release';
       }
     }
 
@@ -1552,8 +1589,10 @@ export function renderDashboardHtml(
               if (!upRes.ok) throw new Error('HTTP ' + upRes.status);
               const upData = await upRes.json();
               if (badge) {
+                const mbNum = typeof upData.sizeMb === 'number' ? upData.sizeMb : (blob.size / (1024 * 1024));
+                const displayMb = mbNum < 0.01 ? '<0.01' : mbNum.toFixed(2);
                 badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200';
-                badge.innerText = '✓ Video Stored (' + (upData.sizeMb || 0) + ' MB)';
+                badge.innerText = '✓ Video Stored (' + displayMb + ' MB)';
               }
             } catch (syncErr) {
               console.warn('Could not sync video to server:', syncErr);
@@ -1993,6 +2032,33 @@ export function renderDashboardHtml(
 
     // Centralized DOM Event Listeners & Event Delegation
     document.addEventListener('DOMContentLoaded', () => {
+      // Mobile Drawer Navigation Controls
+      const mobileNavToggle = document.getElementById('mobileNavToggle');
+      const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+      const mainSidebar = document.getElementById('mainSidebar');
+
+      function openMobileSidebar() {
+        mainSidebar?.classList.remove('-translate-x-full');
+        sidebarBackdrop?.classList.remove('hidden');
+      }
+
+      function closeMobileSidebar() {
+        mainSidebar?.classList.add('-translate-x-full');
+        sidebarBackdrop?.classList.add('hidden');
+      }
+
+      window.__closeMobileSidebar = closeMobileSidebar;
+
+      mobileNavToggle?.addEventListener('click', () => {
+        if (mainSidebar?.classList.contains('-translate-x-full')) {
+          openMobileSidebar();
+        } else {
+          closeMobileSidebar();
+        }
+      });
+
+      sidebarBackdrop?.addEventListener('click', closeMobileSidebar);
+
       // Sidebar Tab Buttons
       document.querySelectorAll('.nav-tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {

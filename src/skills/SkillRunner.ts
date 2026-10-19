@@ -46,13 +46,9 @@ export class SkillRunner {
   }
 
   public saveReceipt(receipt: EvidenceReceipt): void {
-    try {
-      const receiptsDir = path.resolve('data', 'evidence_receipts');
-      if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
-      fs.writeFileSync(path.join(receiptsDir, `${receipt.receiptId}.json`), JSON.stringify(receipt, null, 2), 'utf-8');
-    } catch (e: any) {
-      console.warn('[SkillRunner] Could not save evidence receipt:', e.message);
-    }
+    const receiptsDir = path.resolve('data', 'evidence_receipts');
+    if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
+    fs.writeFileSync(path.join(receiptsDir, `${receipt.receiptId}.json`), JSON.stringify(receipt, null, 2), 'utf-8');
   }
 
   public async execute(input: SkillExecutionInput): Promise<SkillExecutionResult> {
@@ -152,7 +148,8 @@ export class SkillRunner {
       }
     }
 
-    // 3. Postcondition Verification assertions
+    // 3. Postcondition Verification assertions using strict verifier registry
+    const verifiedPostconditions: string[] = [];
     if (skill.verification?.postconditions && skill.verification.postconditions.length > 0) {
       for (const condition of skill.verification.postconditions) {
         if (condition === 'video_id_returned') {
@@ -168,11 +165,13 @@ export class SkillRunner {
               stepsEvidence,
               { error: 'Postcondition failed: video_id_returned assertion failed.' }
             );
+            this.saveReceipt(failedReceipt);
             return {
               receipt: failedReceipt,
               outputData: { status: 'FAILED', error: 'Postcondition failed: No valid YouTube videoId returned.' },
             };
           }
+          verifiedPostconditions.push(condition);
         } else if (condition === 'video_verified_on_youtube') {
           const uploadOut = outputData['publisher.upload_video'];
           const videoId = uploadOut?.videoId;
@@ -187,6 +186,7 @@ export class SkillRunner {
               stepsEvidence,
               { error: 'Postcondition failed: No videoId available to verify on YouTube.' }
             );
+            this.saveReceipt(failedReceipt);
             return {
               receipt: failedReceipt,
               outputData: { status: 'FAILED', error: 'No videoId available to verify on YouTube.' },
@@ -205,6 +205,7 @@ export class SkillRunner {
               stepsEvidence,
               { error: 'Postcondition failed: Missing active YouTube credentials. Cannot verify live release.' }
             );
+            this.saveReceipt(failedReceipt);
             return {
               receipt: failedReceipt,
               outputData: { status: 'FAILED', error: 'Missing active YouTube credentials for live verification.' },
@@ -226,6 +227,7 @@ export class SkillRunner {
             if (!verified.exists) {
               throw new Error(`Video ID ${videoId} not confirmed by YouTube.`);
             }
+            verifiedPostconditions.push(condition);
           } catch (err: any) {
             const failedReceipt = generateEvidenceReceipt(
               missionId,
@@ -237,6 +239,7 @@ export class SkillRunner {
               stepsEvidence,
               { error: `Postcondition failed: Video live verification failed (${err.message})` }
             );
+            this.saveReceipt(failedReceipt);
             return {
               receipt: failedReceipt,
               outputData: { status: 'FAILED', error: `YouTube live verification failed: ${err.message}` },
@@ -255,11 +258,49 @@ export class SkillRunner {
               stepsEvidence,
               { error: 'Postcondition failed: draft_content.json does not exist on disk.' }
             );
+            this.saveReceipt(failedReceipt);
             return {
               receipt: failedReceipt,
               outputData: { status: 'FAILED', error: 'Postcondition failed: draft_content.json was not written.' },
             };
           }
+          verifiedPostconditions.push(condition);
+        } else if (condition === 'target_screen_state_matches_final_demonstration') {
+          if (stepsEvidence.some(s => s.status === 'FAIL')) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: 'Postcondition failed: One or more demonstration replay steps failed.' }
+            );
+            this.saveReceipt(failedReceipt);
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: 'Demonstration replay postcondition failed.' },
+            };
+          }
+          verifiedPostconditions.push(condition);
+        } else {
+          // Strict verifier registry: UNKNOWN / UNSUPPORTED POSTCONDITION FAILS CLOSED
+          const failedReceipt = generateEvidenceReceipt(
+            missionId,
+            skill.id,
+            skill.version,
+            `Agent Executor (${skill.name})`,
+            'FAILED',
+            startedAt,
+            stepsEvidence,
+            { error: `Postcondition failed: Unsupported or unregistered postcondition '${condition}'. Execution failed closed.` }
+          );
+          this.saveReceipt(failedReceipt);
+          return {
+            receipt: failedReceipt,
+            outputData: { status: 'FAILED', error: `Unsupported postcondition: '${condition}'.` },
+          };
         }
       }
     }
@@ -276,7 +317,7 @@ export class SkillRunner {
       outputData,
       {
         planHash: computeSkillPlanHash(skill),
-        passedPostconditions: skill.verification?.postconditions || [],
+        passedPostconditions: verifiedPostconditions,
       }
     );
 

@@ -182,6 +182,39 @@ async function runApprovalTests() {
       assert.strictEqual(successCount, 1, `Exactly ONE concurrent call must succeed. Succeeded: ${successCount}`);
     });
 
+    // 8. Production Database Requirement & Fail-Closed Enforcement
+    await test('Production Database Enforcement: Release proposals & validation fail closed in production without Supabase', async () => {
+      fs.writeFileSync(testVideoPath, initialContent);
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+
+        // 8a: In production without configured Supabase, proposal creation must fail closed
+        let proposalThrew = false;
+        try {
+          await approvalManager.createReleaseProposal({
+            episodeId: 'ep-prod-db-check',
+            title: 'Prod DB Check',
+            videoFilePath: testVideoPath,
+          });
+        } catch (err: any) {
+          proposalThrew = true;
+          assert(err.message.includes('Supabase') || err.message.includes('production'), `Unexpected error: ${err.message}`);
+        }
+
+        // 8b: In production, validateAndConsumeApproval must fail closed without an authoritative database record
+        const fakeToken = 'hdr.eyJwb3Jwb3NhbElkIjoiZmFrZSJ9.fakesig';
+        const valResult = await approvalManager.validateAndConsumeApproval(
+          fakeToken,
+          'ep-prod-db-check',
+          testVideoPath
+        );
+        assert.strictEqual(valResult.valid, false, 'Validation must fail closed in production without authoritative database record');
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
   } finally {
     if (fs.existsSync(testVideoPath)) {
       try { fs.unlinkSync(testVideoPath); } catch {}

@@ -9,6 +9,7 @@ import { SkillRunner } from '../src/skills/SkillRunner.ts';
 import { AuthManager } from '../src/auth/AuthManager.ts';
 import { ApprovalManager } from '../src/auth/ApprovalManager.ts';
 import { computeSkillPlanHash } from '../src/contracts/SkillContract.ts';
+import { signEvidenceReceipt } from '../src/contracts/EvidenceReceipt.ts';
 import { PlaywrightBrowserAdapter } from '../src/adapters/browser/PlaywrightBrowserAdapter.ts';
 
 const BASE_URL = 'http://127.0.0.1:4200';
@@ -39,8 +40,12 @@ async function runTeachRecorderTests() {
   let authCookie = '';
   let authCsrfToken = '';
 
-  // Auth helper: Login to obtain valid creator session cookie
-  const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
+  const globalCustomSkillsPath = path.resolve('data', 'custom_skills.json');
+  const originalGlobalCustomSkills = fs.existsSync(globalCustomSkillsPath) ? fs.readFileSync(globalCustomSkillsPath, 'utf-8') : null;
+
+  try {
+    // Auth helper: Login to obtain valid creator session cookie
+    const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: authManager.getSecret() }),
@@ -345,8 +350,12 @@ async function runTeachRecorderTests() {
       failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
     };
 
-    const registry = new SkillRegistry();
-    registry.registerSkill(sampleSkill, true);
+    const customSkillsFilePath = path.resolve('data', 'custom_skills.json');
+    const origCustomSkills = fs.existsSync(customSkillsFilePath) ? fs.readFileSync(customSkillsFilePath, 'utf-8') : null;
+
+    try {
+      const registry = new SkillRegistry();
+      registry.registerSkill(sampleSkill, true);
 
     // 11a: Call promotion endpoint without testRunReceiptId -> must return HTTP 422
     const unverifiedRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
@@ -383,7 +392,9 @@ async function runTeachRecorderTests() {
       receiptId: tamperedReceiptId,
       planHash: 'tampered_non_matching_plan_hash_0000000000000000',
     };
-    fs.writeFileSync(tamperedReceiptPath, JSON.stringify(mismatchedReceipt, null, 2), 'utf-8');
+    const authSecret = AuthManager.getInstance().getSecret();
+    const signedMismatchedReceipt = signEvidenceReceipt(mismatchedReceipt, authSecret);
+    fs.writeFileSync(tamperedReceiptPath, JSON.stringify(signedMismatchedReceipt, null, 2), 'utf-8');
 
     const mismatchRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
       method: 'POST',
@@ -398,6 +409,35 @@ async function runTeachRecorderTests() {
     const mismatchData = await mismatchRes.json();
     assert.ok(mismatchData.error?.includes('does not match the canonical action plan hash'), `Unexpected error: ${mismatchData.error}`);
     try { fs.unlinkSync(tamperedReceiptPath); } catch {}
+
+    // 11b-3: Cryptographic HMAC Authenticity: Attempt promotion with forged HMAC signature -> must be rejected with 422
+    const forgedReceiptId = `receipt_forged_hmac_${Date.now()}`;
+    const forgedReceiptPath = path.resolve('data', 'evidence_receipts', `${forgedReceiptId}.json`);
+    const forgedReceipt = {
+      ...validReceipt,
+      receiptId: forgedReceiptId,
+      receiptSignature: 'forged_hmac_signature_0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    fs.writeFileSync(forgedReceiptPath, JSON.stringify(forgedReceipt, null, 2), 'utf-8');
+
+    const forgedRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+      body: JSON.stringify({ testRunReceiptId: forgedReceiptId, reviewerNotes: 'Attempting forged HMAC' }),
+    });
+    assert.strictEqual(forgedRes.status, 422, 'Forged HMAC signature in evidence receipt must be rejected with 422');
+    const forgedData = await forgedRes.json();
+    assert.ok(
+      forgedData.error?.includes('cryptographic verification failed') ||
+      forgedData.error?.includes('HMAC signature is invalid') ||
+      forgedData.error?.includes('signature verification failed'),
+      `Expected HMAC rejection message, got: ${forgedData.error}`
+    );
+    try { fs.unlinkSync(forgedReceiptPath); } catch {}
 
     // 11c: Call promotion endpoint with valid testRunReceiptId -> must succeed with 200
     const promoRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
@@ -440,7 +480,12 @@ async function runTeachRecorderTests() {
     } finally {
       process.env.NODE_ENV = origEnv;
     }
-  });
+  } finally {
+    if (origCustomSkills !== null) {
+      fs.writeFileSync(customSkillsFilePath, origCustomSkills, 'utf-8');
+    }
+  }
+});
 
   // Test 12: Browser Prerequisite Check
   await test('Playwright Adapter: Browser prerequisite diagnostic checks installed binary', async () => {
@@ -623,10 +668,154 @@ async function runTeachRecorderTests() {
     }
   });
 
-  console.log('\n====================================================');
-  console.log(` ✓ ALL ${passed} / ${total} TEACH RECORDER & EXECUTION TESTS PASSED`);
-  console.log('====================================================');
-  process.exit(0);
+  // Test 17: Strict Verifier Registry: Unsupported or unregistered postconditions fail closed
+  await test('SkillRunner: Strict verifier registry fails closed on unknown or unverified postconditions', async () => {
+    const runner = new SkillRunner();
+    const rogueSkill = {
+      schemaVersion: '1.0',
+      id: 'rogue_postcondition_skill',
+      name: 'Rogue Postcondition Skill',
+      version: '1.0.0',
+      description: 'Skill with bogus unregistered postcondition',
+      executionMode: 'browser_agent' as const,
+      isSample: false,
+      status: 'draft' as const,
+      inputs: {},
+      preconditions: [],
+      approvalGate: { required: false, level: '0_autonomous' as const, prompt: '' },
+      actions: [
+        {
+          step: 1,
+          name: 'Navigate to Example',
+          action: 'browser.navigate',
+          parameters: { target: 'https://example.com' },
+        },
+      ],
+      verification: {
+        postconditions: ['unregistered_bogus_security_condition_12345'],
+        proofRequired: false,
+      },
+      failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
+    };
+
+    const execResult = await runner.execute({
+      missionId: 'test-mission-strict-postcond',
+      skill: rogueSkill,
+      params: {},
+      isApprovedByHuman: true,
+    });
+
+    assert.strictEqual(execResult.outputData.status, 'FAILED', 'Execution must fail closed when postcondition is unknown');
+    assert.strictEqual(execResult.receipt.status, 'FAILED', 'Receipt status must be FAILED');
+    assert.ok(
+      execResult.outputData.error?.includes('Unsupported postcondition') ||
+      execResult.receipt.verificationProof?.error?.includes('Unsupported or unregistered postcondition'),
+      `Unexpected error message: ${JSON.stringify(execResult.outputData)}`
+    );
+    assert.strictEqual(execResult.receipt.passedPostconditions?.length || 0, 0, 'Unknown postcondition must not be marked passed');
+  });
+
+  // Test 18: File Deletion Invalidation: Deleting custom_skills.json completely purges memory on forceFresh
+  await test('SkillRegistry: Complete removal of custom_skills.json purges memory cache on forceFresh', async () => {
+    const registry = new SkillRegistry();
+    const tempSkillId = `temp_delete_skill_${Date.now()}`;
+    const tempSkill = {
+      schemaVersion: '1.0',
+      id: tempSkillId,
+      name: 'Temporary Skill',
+      version: '1.0.0',
+      description: 'Will be deleted with file',
+      executionMode: 'browser_agent' as const,
+      isSample: false,
+      status: 'draft' as const,
+      inputs: {},
+      preconditions: [],
+      approvalGate: { required: false, level: '0_autonomous' as const, prompt: '' },
+      actions: [],
+      verification: { postconditions: [], proofRequired: false },
+      failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
+    };
+
+    const customFilePath = path.resolve('data', 'custom_skills.json');
+    const backupContent = fs.existsSync(customFilePath) ? fs.readFileSync(customFilePath, 'utf-8') : '[]';
+
+    try {
+      registry.registerSkill(tempSkill, true);
+      assert.ok(registry.getSkill(tempSkillId), 'Skill must be registered in memory and disk');
+
+      // Delete custom_skills.json completely from disk
+      if (fs.existsSync(customFilePath)) fs.unlinkSync(customFilePath);
+
+      // Calling getSkill with forceFresh: true must purge from memory
+      const purged = registry.getSkill(tempSkillId, { forceFresh: true });
+      assert.strictEqual(purged, undefined, 'Skill must be purged from memory when backing file is removed');
+    } finally {
+      fs.writeFileSync(customFilePath, backupContent, 'utf-8');
+    }
+  });
+
+  // Test 19: Video Recording Security: SessionId validation, traversal blocking, and path privacy
+  await test('Server Security: POST /api/teach/record/video validates sessionId and does not leak local paths', async () => {
+    // 19a: Invalid sessionId with directory traversal or illegal chars -> must return 400
+    const invalidRes = await fetch(`${BASE_URL}/api/teach/record/video?sessionId=../../etc/passwd`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'video/webm',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+      body: Buffer.from('fake-video-payload'),
+    });
+    assert.strictEqual(invalidRes.status, 400, 'Directory traversal in sessionId must be rejected with 400');
+    const invalidData = await invalidRes.json();
+    assert.ok(invalidData.error?.includes('Invalid sessionId format'), `Unexpected error: ${invalidData.error}`);
+
+    // 19b: Valid upload returns success without absolute filesystem path leakage
+    const validSession = `rec_valid_${Date.now()}`;
+    const validRes = await fetch(`${BASE_URL}/api/teach/record/video?sessionId=${validSession}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'video/webm',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+      body: Buffer.from('dummy-valid-webm-data-chunk-0123456789'),
+    });
+    assert.strictEqual(validRes.status, 200, `Expected 200, got ${validRes.status}`);
+    const validData = await validRes.json();
+    assert.strictEqual(validData.success, true);
+    assert.strictEqual(validData.sessionId, validSession);
+    assert.strictEqual(validData.savedPath, undefined, 'CRITICAL: Must not leak absolute server path in API response');
+    assert.ok(typeof validData.sizeMb === 'number' || typeof validData.sizeMb === 'string', 'Must return sizeMb metric');
+
+    // Clean up test recording file
+    const recFile1 = path.resolve('data', 'recordings', `${validSession}.webm`);
+    const recFile2 = path.resolve('data', 'demonstrations', `${validSession}.webm`);
+    if (fs.existsSync(recFile1)) {
+      try { fs.unlinkSync(recFile1); } catch {}
+    }
+    if (fs.existsSync(recFile2)) {
+      try { fs.unlinkSync(recFile2); } catch {}
+    }
+  });
+
+    if (originalGlobalCustomSkills !== null) {
+      try {
+        fs.writeFileSync(globalCustomSkillsPath, originalGlobalCustomSkills, 'utf-8');
+      } catch {}
+    }
+
+    console.log('\n====================================================');
+    console.log(` ✓ ALL ${passed} / ${total} TEACH RECORDER & EXECUTION TESTS PASSED`);
+    console.log('====================================================');
+    process.exit(0);
+  } finally {
+    if (originalGlobalCustomSkills !== null) {
+      try {
+        fs.writeFileSync(globalCustomSkillsPath, originalGlobalCustomSkills, 'utf-8');
+      } catch {}
+    }
+  }
 }
 
 runTeachRecorderTests().catch(err => {
