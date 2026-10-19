@@ -13,6 +13,7 @@ import { HeadlessRenderer } from '../adapters/media/HeadlessRenderer.ts';
 import { YTEngineBridge } from '../bridge/YTEngineBridge.ts';
 import { config } from '../config/env.ts';
 import { CredentialStore } from '../auth/CredentialStore.ts';
+import { PlaywrightBrowserAdapter } from '../adapters/browser/PlaywrightBrowserAdapter.ts';
 
 export interface SkillExecutionInput {
   missionId: string;
@@ -33,12 +34,14 @@ export class SkillRunner {
   private bridge: YTEngineBridge;
   private exportWatcher: ExportFolderWatcher;
   private renderer: HeadlessRenderer;
+  private browserAdapter: PlaywrightBrowserAdapter;
 
   constructor() {
     this.capcutAdapter = new CapCutAdapter();
     this.bridge = new YTEngineBridge();
     this.exportWatcher = new ExportFolderWatcher();
     this.renderer = new HeadlessRenderer();
+    this.browserAdapter = new PlaywrightBrowserAdapter();
   }
 
   public async execute(input: SkillExecutionInput): Promise<SkillExecutionResult> {
@@ -468,52 +471,69 @@ export class SkillRunner {
         };
       }
 
-      // Handlers for Compiled Demonstration Actions
+      // Real Handlers for Compiled Demonstration Actions via Playwright
       case 'browser.navigate': {
-        const target = params.target || 'about:blank';
+        const target = params.target || params.url || 'about:blank';
+        const allowLoopback = process.env.NODE_ENV !== 'production' || !!params.allowLoopback;
+        const navResult = await this.browserAdapter.navigate(target, allowLoopback);
         return {
           navigated: true,
-          target,
+          target: navResult.url,
+          title: navResult.title,
+          status: navResult.status,
           timestamp: Date.now(),
         };
       }
 
       case 'ui.click': {
         const target = params.target || 'element';
+        const clickResult = await this.browserAdapter.click(target, params.selector);
         return {
           clicked: true,
-          target,
-          selector: params.selector || null,
+          target: clickResult.target,
+          currentUrl: clickResult.currentUrl,
           timestamp: Date.now(),
         };
       }
 
       case 'form.fill_text': {
         const field = params.field || 'input';
-        const value = params[params.valueKey] || params.value || 'Input text';
+        const value = params[params.valueKey] !== undefined ? params[params.valueKey] : params.value;
+        if (value === undefined || value === null) {
+          throw new Error(`form.fill_text failed: Missing value for field '${field}'.`);
+        }
+        const fillResult = await this.browserAdapter.fillText(field, String(value), params.selector);
         return {
           filled: true,
-          field,
-          valueApplied: value,
+          field: fillResult.field,
+          valueApplied: String(value),
           timestamp: Date.now(),
         };
       }
 
       case 'file.select': {
         const fileKey = params.fileKey || 'file';
-        const filePath = params[fileKey] || params.filePath || 'assets/selected_file';
+        const filePath = params[fileKey] || params.filePath;
+        if (!filePath) {
+          throw new Error(`file.select failed: Missing required file path parameter.`);
+        }
+        const selectResult = await this.browserAdapter.selectFile(filePath, params.selector);
         return {
           fileSelected: true,
-          filePath,
+          filePath: selectResult.filePath,
+          fileName: selectResult.fileName,
           timestamp: Date.now(),
         };
       }
 
       case 'action.verify': {
         const condition = params.condition || 'Verified';
+        const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : 8000;
+        const verifyResult = await this.browserAdapter.verify(condition, params.selector, params.expectedText, timeoutMs);
         return {
           verified: true,
-          condition,
+          condition: verifyResult.condition,
+          currentUrl: verifyResult.currentUrl,
           timestamp: Date.now(),
         };
       }

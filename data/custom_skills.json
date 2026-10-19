@@ -69,6 +69,43 @@
   },
   {
     "schemaVersion": "1.0",
+    "id": "create_youtube_video",
+    "name": "Create YouTube Video",
+    "version": "1.0.0",
+    "description": "Synthesized skill compiled from 1 demonstration actions in YouTube Studio.",
+    "executionMode": "browser_agent",
+    "inputs": {},
+    "preconditions": [
+      "target_application_accessible"
+    ],
+    "approvalGate": {
+      "required": false,
+      "level": "1_notify",
+      "prompt": "Review proposed execution parameters before Create YouTube Video executes."
+    },
+    "actions": [
+      {
+        "step": 1,
+        "name": "Click Create Video",
+        "action": "ui.click",
+        "parameters": {
+          "target": "Create Video"
+        }
+      }
+    ],
+    "verification": {
+      "postconditions": [
+        "target_screen_state_matches_final_demonstration"
+      ],
+      "proofRequired": true
+    },
+    "failureRecovery": {
+      "maxRetries": 2,
+      "alertLevel": "medium"
+    }
+  },
+  {
+    "schemaVersion": "1.0",
     "id": "schedule_tiktok_short",
     "name": "Schedule TikTok Short",
     "version": "1.0.0",
@@ -143,43 +180,6 @@
         "action": "action.verify",
         "parameters": {
           "condition": "Post Scheduled Successfully"
-        }
-      }
-    ],
-    "verification": {
-      "postconditions": [
-        "target_screen_state_matches_final_demonstration"
-      ],
-      "proofRequired": true
-    },
-    "failureRecovery": {
-      "maxRetries": 2,
-      "alertLevel": "medium"
-    }
-  },
-  {
-    "schemaVersion": "1.0",
-    "id": "create_youtube_video",
-    "name": "Create YouTube Video",
-    "version": "1.0.0",
-    "description": "Synthesized skill compiled from 1 demonstration actions in YouTube Studio.",
-    "executionMode": "browser_agent",
-    "inputs": {},
-    "preconditions": [
-      "target_application_accessible"
-    ],
-    "approvalGate": {
-      "required": false,
-      "level": "1_notify",
-      "prompt": "Review proposed execution parameters before Create YouTube Video executes."
-    },
-    "actions": [
-      {
-        "step": 1,
-        "name": "Click Create Video",
-        "action": "ui.click",
-        "parameters": {
-          "target": "Create Video"
         }
       }
     ],

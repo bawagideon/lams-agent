@@ -465,7 +465,7 @@ export function renderDashboardHtml(
             Open Recorder Studio
           </button>
           <button data-action="open-teach" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
-            + Quick Teach
+            + Teach New Skill
           </button>
         </div>
       </div>
@@ -501,6 +501,9 @@ export function renderDashboardHtml(
               <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
               <span>Stop Capture</span>
             </button>
+            <a id="btnDownloadVideo" download="demonstration_recording.webm" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer">
+              <span>⬇ Download Video</span>
+            </a>
             <button id="btnClearRecording" class="border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition">
               Reset
             </button>
@@ -1005,6 +1008,51 @@ export function renderDashboardHtml(
   </div>
 
   <!-- ============================================================ -->
+  <!-- 5B. SKILL EXECUTION APPROVAL MODAL (Human Gate Review)      -->
+  <!-- ============================================================ -->
+  <div id="skillApprovalModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div class="bg-white max-w-lg w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+            Human Approval Gate
+          </span>
+          <h3 id="skillApprovalTitle" class="text-base font-bold text-gray-900 mt-1">Review Skill Execution Plan</h3>
+          <p class="text-xs text-gray-500">Examine the proposed actions before signing off on execution.</p>
+        </div>
+        <button id="btnCloseSkillApproval" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="bg-gray-50 border border-gray-200/80 rounded-2xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-gray-800" id="approvalModalSkillName">Skill Name</span>
+            <span class="text-[10px] font-mono text-gray-500" id="approvalModalGateLevel">Level 2</span>
+          </div>
+          <div id="approvalModalSensitiveNotice" class="hidden text-[11px] bg-rose-50 border border-rose-200 text-rose-800 p-2.5 rounded-xl space-y-1">
+            <span class="font-bold">⚠️ Consequential Actions Detected:</span>
+            <ul id="approvalModalSensitiveList" class="list-disc list-inside"></ul>
+          </div>
+        </div>
+
+        <div>
+          <span class="font-bold text-gray-700 block mb-1.5 uppercase text-[10px] tracking-wider">Planned Action Sequence</span>
+          <div id="approvalModalPlanSteps" class="max-h-48 overflow-y-auto space-y-1.5 border border-gray-200 rounded-xl p-3 bg-white divide-y divide-gray-100"></div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+        <button id="btnCancelSkillApproval" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+          Reject Plan
+        </button>
+        <button id="btnConfirmSkillApproval" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
+          <span>✓ Approve & Execute</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- 6. FRONTEND JAVASCRIPT LOGIC                                 -->
   <!-- ============================================================ -->
   <script>
@@ -1331,6 +1379,10 @@ export function renderDashboardHtml(
     let recordingTimerInterval = null;
     let recordingStartTime = 0;
     let localRecordedEvents = [];
+    let mediaRecorder = null;
+    let recordedMediaChunks = [];
+    let pendingRunSkillId = null;
+    let pendingRunApprovalToken = null;
 
     function updateRecordingTimer() {
       const elapsedSec = Math.floor((Date.now() - recordingStartTime) / 1000);
@@ -1348,17 +1400,48 @@ export function renderDashboardHtml(
           audio: audioRequested
         });
 
+        // 1. Notify backend of session start before changing state
+        const skillName = document.getElementById('recorderSkillName')?.value || 'Interactive Demonstration';
+        const startRes = await fetch('/api/teach/record/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionName: skillName })
+        });
+
+        if (!startRes.ok) {
+          const errData = await startRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Server rejected recording session start');
+        }
+
         screenMediaStream = stream;
         const video = document.getElementById('recorderScreenVideo');
         if (video) {
+          video.src = '';
           video.srcObject = stream;
+          video.controls = false;
           video.classList.remove('hidden');
+        }
+
+        // 2. Real MediaRecorder instantiation
+        recordedMediaChunks = [];
+        try {
+          const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+            ? 'video/webm;codecs=vp9,opus'
+            : (MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : '');
+          mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) recordedMediaChunks.push(e.data);
+          };
+          mediaRecorder.start(1000);
+        } catch (mediaErr) {
+          console.warn('MediaRecorder init error:', mediaErr);
         }
 
         document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
         document.getElementById('recorderLiveHud')?.classList.remove('hidden');
         document.getElementById('btnStartCapture')?.classList.add('hidden');
         document.getElementById('btnStopCapture')?.classList.remove('hidden');
+        document.getElementById('btnDownloadVideo')?.classList.add('hidden');
 
         const badge = document.getElementById('recorderStatusBadge');
         if (badge) {
@@ -1370,16 +1453,8 @@ export function renderDashboardHtml(
         updateRecordingTimer();
         recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
 
-        // Notify backend of session start
-        const skillName = document.getElementById('recorderSkillName')?.value || 'Interactive Demonstration';
-        fetch('/api/teach/record/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionName: skillName })
-        }).catch(console.error);
-
         // Auto log stream start event
-        recordStudioEvent('navigate', {
+        await recordStudioEvent('navigate', {
           windowTitle: 'Screen Viewfinder Active',
           inputData: 'User focused workspace window'
         });
@@ -1393,7 +1468,7 @@ export function renderDashboardHtml(
         }
       } catch (err) {
         console.warn('Screen capture declined or unsupported:', err);
-        alert('Screen capture was cancelled or not supported. You can still record workflow steps manually using the Action Step Palette!');
+        alert('Screen capture notice: ' + err.message + '\nYou can still record workflow steps manually using the Action Step Palette!');
       }
     }
 
@@ -1407,13 +1482,40 @@ export function renderDashboardHtml(
         recordingTimerInterval = null;
       }
 
-      const video = document.getElementById('recorderScreenVideo');
-      if (video) {
-        video.srcObject = null;
-        video.classList.add('hidden');
+      // Stop real MediaRecorder and assemble replay blob
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try {
+          mediaRecorder.stop();
+        } catch {}
       }
 
-      document.getElementById('viewfinderIdleOverlay')?.classList.remove('hidden');
+      setTimeout(() => {
+        if (recordedMediaChunks.length > 0) {
+          const blob = new Blob(recordedMediaChunks, { type: 'video/webm' });
+          const blobUrl = URL.createObjectURL(blob);
+          const dlBtn = document.getElementById('btnDownloadVideo');
+          if (dlBtn) {
+            dlBtn.href = blobUrl;
+            dlBtn.classList.remove('hidden');
+          }
+          const video = document.getElementById('recorderScreenVideo');
+          if (video) {
+            video.srcObject = null;
+            video.src = blobUrl;
+            video.controls = true;
+            video.classList.remove('hidden');
+            document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
+          }
+        } else {
+          const video = document.getElementById('recorderScreenVideo');
+          if (video) {
+            video.srcObject = null;
+            video.classList.add('hidden');
+          }
+          document.getElementById('viewfinderIdleOverlay')?.classList.remove('hidden');
+        }
+      }, 300);
+
       document.getElementById('recorderLiveHud')?.classList.add('hidden');
       document.getElementById('btnStartCapture')?.classList.remove('hidden');
       document.getElementById('btnStopCapture')?.classList.add('hidden');
@@ -1425,7 +1527,8 @@ export function renderDashboardHtml(
       }
 
       try {
-        await fetch('/api/teach/record/stop', { method: 'POST' });
+        const stopRes = await fetch('/api/teach/record/stop', { method: 'POST' });
+        if (!stopRes.ok) console.warn('Record stop returned HTTP ' + stopRes.status);
       } catch (err) {
         console.error(err);
       }
@@ -1434,15 +1537,24 @@ export function renderDashboardHtml(
     function resetRecorderStudio() {
       stopScreenCapture();
       localRecordedEvents = [];
+      window.__isPresetTemplateLoaded = false;
       renderRecordedEventsStream();
       const badge = document.getElementById('recorderStatusBadge');
       if (badge) {
         badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide';
         badge.innerText = 'Standby';
       }
+      document.getElementById('btnDownloadVideo')?.classList.add('hidden');
+      const video = document.getElementById('recorderScreenVideo');
+      if (video) {
+        video.src = '';
+        video.srcObject = null;
+        video.classList.add('hidden');
+      }
+      document.getElementById('viewfinderIdleOverlay')?.classList.remove('hidden');
     }
 
-    function recordStudioEvent(eventType, options) {
+    async function recordStudioEvent(eventType, options) {
       options = options || {};
       const targetApp = document.getElementById('recorderTargetApp')?.value || 'Creator Studio';
       const ev = {
@@ -1458,11 +1570,16 @@ export function renderDashboardHtml(
       renderRecordedEventsStream();
 
       // Dispatch to backend recorder
-      fetch('/api/teach/record/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ev)
-      }).catch(console.error);
+      try {
+        const res = await fetch('/api/teach/record/event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ev)
+        });
+        if (!res.ok) console.warn('Record event HTTP error: ' + res.status);
+      } catch (err) {
+        console.warn('Network error recording event:', err);
+      }
     }
 
     window.removeRecordedEvent = function(index) {
@@ -1537,6 +1654,7 @@ export function renderDashboardHtml(
 
     function loadPreset(presetKey) {
       localRecordedEvents = [];
+      window.__isPresetTemplateLoaded = true;
       const skillNameInput = document.getElementById('recorderSkillName');
       const appSelect = document.getElementById('recorderTargetApp');
 
@@ -1582,9 +1700,10 @@ export function renderDashboardHtml(
         return;
       }
 
-      if (localRecordedEvents.length === 0) {
-        const useDemo = confirm('No actions have been recorded yet. Would you like to compile a standard automated workflow for ' + application + '?');
-        if (!useDemo) return;
+      const isTemplate = window.__isPresetTemplateLoaded || false;
+      if (localRecordedEvents.length === 0 && !isTemplate) {
+        alert('Cannot compile: No demonstration actions were captured. Please use the Action Step Palette to record actions or click a Preset Template first.');
+        return;
       }
 
       const btn = document.getElementById('btnCompileFromStudio');
@@ -1600,12 +1719,13 @@ export function renderDashboardHtml(
           body: JSON.stringify({
             name,
             application,
-            events: localRecordedEvents.length > 0 ? localRecordedEvents : undefined
+            events: localRecordedEvents.length > 0 ? localRecordedEvents : undefined,
+            isSampleTemplate: isTemplate,
           })
         });
 
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
+        if (!res.ok || data.error) throw new Error(data.error || 'Server rejected skill compilation');
 
         appendChatMessage('agent', '✓ New skill **' + data.skill.name + '** successfully synthesized and compiled with ' + data.skill.actions.length + ' verified steps!');
 
@@ -1654,7 +1774,7 @@ export function renderDashboardHtml(
         const res = await fetch('/api/teach/compile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, application: app })
+          body: JSON.stringify({ name, application: app, isSampleTemplate: true })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -1668,19 +1788,76 @@ export function renderDashboardHtml(
       }
     }
 
+    // Skill Execution with Real Human Approval Gate Preflight
     async function runSkill(id) {
-      if (!confirm('Run workforce skill: ' + id + '?')) return;
-      appendChatMessage('agent', 'Initiating execution of skill: **' + id + '**...');
+      pendingRunSkillId = id;
+      appendChatMessage('agent', 'Checking preflight approval requirements for skill: **' + id + '**...');
+
       try {
-        const res = await fetch('/api/skills/' + id + '/run', { method: 'POST' });
+        // Step 1: Request execution plan and check approval requirement
+        const propRes = await fetch('/api/skills/' + id + '/propose-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ params: {} })
+        });
+        const propData = await propRes.json();
+        if (propData.error) throw new Error(propData.error);
+
+        if (propData.requiresApproval) {
+          // Open Cryptographic Approval Modal
+          pendingRunApprovalToken = propData.approvalToken;
+          document.getElementById('approvalModalSkillName').innerText = propData.proposal?.skillName || id;
+          document.getElementById('approvalModalGateLevel').innerText = (propData.proposal?.gateLevel || 'Level 2: Approval Gate').toUpperCase();
+
+          const sensitiveBox = document.getElementById('approvalModalSensitiveNotice');
+          const sensitiveList = document.getElementById('approvalModalSensitiveList');
+          if (propData.proposal?.sensitiveActions?.length > 0) {
+            sensitiveList.innerHTML = propData.proposal.sensitiveActions.map(a => '<li>' + clientEscapeHtml(a) + '</li>').join('');
+            sensitiveBox.classList.remove('hidden');
+          } else {
+            sensitiveBox.classList.add('hidden');
+          }
+
+          const stepsBox = document.getElementById('approvalModalPlanSteps');
+          stepsBox.innerHTML = (propData.proposal?.actionsSummary || []).map(s => '<div class="py-1 text-gray-700 font-mono text-[11px]">' + clientEscapeHtml(s) + '</div>').join('');
+
+          document.getElementById('skillApprovalModal').classList.remove('hidden');
+          return;
+        }
+
+        // If no approval gate required (autonomous Level 0)
+        await executeSkillWithToken(id, null);
+      } catch (err) {
+        appendChatMessage('agent', 'Preflight check failed: ' + err.message);
+        alert('Preflight check failed: ' + err.message);
+      }
+    }
+
+    async function executeSkillWithToken(id, approvalToken) {
+      appendChatMessage('agent', 'Dispatching skill: **' + id + '** to Playwright browser / worker engine...');
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (approvalToken) headers['X-Approval-Token'] = approvalToken;
+
+        const res = await fetch('/api/skills/' + id + '/run', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ approvalToken, params: {} })
+        });
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        appendChatMessage('agent', '✓ Skill **' + id + '** executed with verified receipt: [' + (data.receipt?.id || 'verified') + ']');
-        alert('Skill executed successfully! Output: ' + JSON.stringify(data.outputData || {}));
+        if (!res.ok || data.error) throw new Error(data.error || 'Skill execution failed');
+
+        appendChatMessage('agent', '✓ Skill **' + id + '** completed with verified receipt [' + (data.receipt?.receiptId || 'SUCCESS') + ']');
+        alert('Skill executed successfully! Evidence receipt: ' + (data.receipt?.receiptId || 'SUCCESS'));
       } catch (err) {
         appendChatMessage('agent', 'Execution failed: ' + err.message);
-        alert('Error executing skill: ' + err.message);
+        alert('Execution failed: ' + err.message);
       }
+    }
+
+    function closeSkillApprovalModal() {
+      document.getElementById('skillApprovalModal')?.classList.add('hidden');
+      pendingRunApprovalToken = null;
     }
 
     // Centralized DOM Event Listeners & Event Delegation
@@ -1713,6 +1890,18 @@ export function renderDashboardHtml(
       // Modals Action Buttons
       document.getElementById('btnConfirmRelease')?.addEventListener('click', confirmAndPublish);
       document.getElementById('btnCompileSkill')?.addEventListener('click', compileDemonstrationSkill);
+
+      // Skill Approval Modal Buttons
+      document.getElementById('btnCloseSkillApproval')?.addEventListener('click', closeSkillApprovalModal);
+      document.getElementById('btnCancelSkillApproval')?.addEventListener('click', closeSkillApprovalModal);
+      document.getElementById('btnConfirmSkillApproval')?.addEventListener('click', async () => {
+        const skillId = pendingRunSkillId;
+        const token = pendingRunApprovalToken;
+        closeSkillApprovalModal();
+        if (skillId) {
+          await executeSkillWithToken(skillId, token);
+        }
+      });
 
       // Studio Action Buttons
       document.getElementById('btnStartCapture')?.addEventListener('click', startScreenCapture);

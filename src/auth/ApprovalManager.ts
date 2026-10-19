@@ -26,6 +26,23 @@ export interface CanonicalReleasePlan {
   consumedAt?: string;
 }
 
+export interface CanonicalSkillExecutionPlan {
+  id: string;
+  skillId: string;
+  skillVersion: string;
+  skillName: string;
+  gateLevel: string;
+  planHash: string;
+  actionsSummary: string[];
+  sensitiveActions: string[];
+  inputs: Record<string, any>;
+  approvedByUserId: string;
+  status: 'PENDING' | 'CONSUMED' | 'EXPIRED' | 'REVOKED';
+  createdAt: string;
+  expiresAt: string;
+  consumedAt?: string;
+}
+
 export class ApprovalManager {
   private static instance: ApprovalManager;
   private filePath: string;
@@ -320,6 +337,145 @@ export class ApprovalManager {
     proposal.consumedAt = new Date().toISOString();
     this.persistOrThrow();
 
+    return { valid: true, proposal };
+  }
+
+  private skillProposals: Map<string, CanonicalSkillExecutionPlan> = new Map();
+
+  /**
+   * Generates a cryptographically signed execution proposal for a workforce skill.
+   */
+  public createSkillExecutionProposal(
+    skill: { id: string; version: string; name: string; approvalGate: { level: string }; actions: Array<{ step: number; name: string; action: string }> },
+    params: Record<string, any>,
+    approvedByUserId: string
+  ): { proposal: CanonicalSkillExecutionPlan; approvalToken: string } {
+    const id = `skprop_${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + this.ttlMs).toISOString();
+
+    const actionsSummary = skill.actions.map(a => `Step ${a.step}: ${a.name} (${a.action})`);
+    const sensitiveActions = skill.actions
+      .filter(a => /publish|upload|export|submit|delete|schedule|release/i.test(a.name) || /publish|delete/i.test(a.action))
+      .map(a => `Step ${a.step}: ${a.name}`);
+
+    // Compute plan hash over canonical parameters and actions
+    const planPayload = JSON.stringify({
+      skillId: skill.id,
+      skillVersion: skill.version,
+      actions: skill.actions,
+      params,
+    });
+    const planHash = crypto.createHash('sha256').update(planPayload).digest('hex');
+
+    const canonicalString = [
+      id,
+      skill.id,
+      skill.version,
+      planHash,
+      approvedByUserId,
+      createdAt,
+      expiresAt,
+    ].join(':');
+
+    const signature = crypto
+      .createHmac('sha256', this.authManager.getSecret())
+      .update(canonicalString)
+      .digest('base64url');
+
+    const approvalToken = `${id}.${signature}`;
+
+    const proposal: CanonicalSkillExecutionPlan = {
+      id,
+      skillId: skill.id,
+      skillVersion: skill.version,
+      skillName: skill.name,
+      gateLevel: skill.approvalGate.level,
+      planHash,
+      actionsSummary,
+      sensitiveActions,
+      inputs: params,
+      approvedByUserId,
+      status: 'PENDING',
+      createdAt,
+      expiresAt,
+    };
+
+    this.skillProposals.set(id, proposal);
+    return { proposal, approvalToken };
+  }
+
+  /**
+   * Validates and atomically consumes a skill execution approval token.
+   */
+  public validateAndConsumeSkillApproval(
+    approvalToken: string,
+    expectedSkillId: string,
+    expectedSkillVersion: string,
+    currentParams: Record<string, any>,
+    skillActions: Array<{ step: number; name: string; action: string }>
+  ): { valid: boolean; proposal?: CanonicalSkillExecutionPlan; error?: string } {
+    if (!approvalToken || typeof approvalToken !== 'string') {
+      return { valid: false, error: 'Execution denied: Missing required cryptographic approval token.' };
+    }
+
+    const parts = approvalToken.split('.');
+    if (parts.length !== 2) {
+      return { valid: false, error: 'Execution denied: Invalid approval token format.' };
+    }
+
+    const [proposalId, providedSig] = parts;
+    const proposal = this.skillProposals.get(proposalId);
+    if (!proposal) {
+      return { valid: false, error: 'Execution denied: Approval proposal not found or expired.' };
+    }
+
+    if (Date.now() > Date.parse(proposal.expiresAt)) {
+      proposal.status = 'EXPIRED';
+      return { valid: false, error: 'Execution denied: Approval proposal expired.' };
+    }
+
+    if (proposal.status !== 'PENDING') {
+      return { valid: false, error: `Execution denied: Approval proposal has already been ${proposal.status.toLowerCase()} (replay rejected).` };
+    }
+
+    const canonicalString = [
+      proposalId,
+      proposal.skillId,
+      proposal.skillVersion,
+      proposal.planHash,
+      proposal.approvedByUserId,
+      proposal.createdAt,
+      proposal.expiresAt,
+    ].join(':');
+
+    const expectedSig = crypto
+      .createHmac('sha256', this.authManager.getSecret())
+      .update(canonicalString)
+      .digest('base64url');
+
+    if (providedSig.length !== expectedSig.length || !crypto.timingSafeEqual(Buffer.from(providedSig), Buffer.from(expectedSig))) {
+      return { valid: false, error: 'Execution denied: Tampered or invalid approval token signature.' };
+    }
+
+    if (proposal.skillId !== expectedSkillId) {
+      return { valid: false, error: `Execution denied: Token bound to skill '${proposal.skillId}', not '${expectedSkillId}'.` };
+    }
+
+    // Verify current plan hash matches approved plan
+    const currentPlanPayload = JSON.stringify({
+      skillId: expectedSkillId,
+      skillVersion: expectedSkillVersion,
+      actions: skillActions,
+      params: currentParams,
+    });
+    const currentPlanHash = crypto.createHash('sha256').update(currentPlanPayload).digest('hex');
+    if (currentPlanHash !== proposal.planHash) {
+      return { valid: false, error: 'Execution denied: Action plan or inputs modified after approval was granted.' };
+    }
+
+    proposal.status = 'CONSUMED';
+    proposal.consumedAt = new Date().toISOString();
     return { valid: true, proposal };
   }
 }

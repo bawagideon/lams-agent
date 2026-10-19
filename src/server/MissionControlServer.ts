@@ -903,6 +903,8 @@ export class MissionControlServer {
     }
 
     if (method === 'GET' && url.pathname === '/api/teach/record/status') {
+      const auth = this.checkAuth(req, res, 'read');
+      if (!auth.authorized) return;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: this.demonstrationRecorder.getStatus(),
@@ -917,15 +919,22 @@ export class MissionControlServer {
       if (!auth.authorized) return;
       try {
         const body = await this.readRequestBody(req);
-        const { name, application, events } = JSON.parse(body || '{}');
+        const { name, application, events, isSampleTemplate } = JSON.parse(body || '{}');
         const targetApp = application || 'YouTube Studio';
 
-        // Use client-provided recorded events, or recorded session events, or intelligent default
         let demoEvents: ObservedEvent[] = Array.isArray(events) && events.length > 0
           ? events
           : this.demonstrationRecorder.getLiveEvents();
 
         if (!demoEvents || demoEvents.length === 0) {
+          if (!isSampleTemplate) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: 'Cannot compile skill: No demonstration actions were captured. Please record interactions or load a template.',
+            }));
+            return;
+          }
+          // Only if explicitly declared as a sample template
           demoEvents = [
             { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Main View`, eventType: 'navigate' as const, targetElement: { text: 'Content / Library' } },
             { timestamp: Date.now(), application: targetApp, windowTitle: `${targetApp} Upload`, eventType: 'click' as const, targetElement: { text: 'Select Video File' } },
@@ -934,7 +943,11 @@ export class MissionControlServer {
           ];
         }
 
-        const compiled = this.workflowCompiler.compile(name || 'Custom Workflow', demoEvents);
+        const skillName = (name || 'Custom Workflow').trim();
+        const compiled = this.workflowCompiler.compile(skillName, demoEvents);
+        if (isSampleTemplate) {
+          compiled.skill.description = `[Sample Template] ${compiled.skill.description}`;
+        }
         this.skillRegistry.registerSkill(compiled.skill, true);
         this.demonstrationRecorder.clear();
 
@@ -953,7 +966,58 @@ export class MissionControlServer {
       return;
     }
 
-    // 16. API: Skills Execution
+    // 17. API: Skill Execution Proposal (Approval Gate Preflight)
+    if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/propose-run')) {
+      const auth = this.checkAuth(req, res, 'read');
+      if (!auth.authorized) return;
+      const skillId = url.pathname.split('/')[3];
+      const skill = this.skillRegistry.getSkill(skillId);
+      if (!skill) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Skill not found' }));
+        return;
+      }
+
+      try {
+        const body = await this.readRequestBody(req);
+        const { params } = JSON.parse(body || '{}');
+        const runtimeParams = params || {};
+
+        const requiresApproval = skill.approvalGate?.required && skill.approvalGate.level !== '0_autonomous';
+        if (!requiresApproval) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            requiresApproval: false,
+            skillId: skill.id,
+            skillName: skill.name,
+            version: skill.version,
+            actions: skill.actions,
+          }));
+          return;
+        }
+
+        const userId = auth.session?.userId || 'creator';
+        const { proposal, approvalToken } = this.approvalManager.createSkillExecutionProposal(
+          skill,
+          runtimeParams,
+          userId
+        );
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          requiresApproval: true,
+          approvalToken,
+          proposal,
+          actions: skill.actions,
+        }));
+      } catch (propErr: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: propErr.message }));
+      }
+      return;
+    }
+
+    // 18. API: Skills Execution with Enforced Approval Validation
     if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/run')) {
       const auth = this.checkAuth(req, res, 'approve');
       if (!auth.authorized) return;
@@ -965,14 +1029,60 @@ export class MissionControlServer {
         return;
       }
 
-      const result = await this.skillRunner.execute({
-        missionId: 'manual-trigger',
-        skill,
-        params: {},
-        isApprovedByHuman: true,
-      });
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(result));
+      try {
+        const body = await this.readRequestBody(req);
+        const { params, approvalToken } = JSON.parse(body || '{}');
+        const runtimeParams = params || {};
+        const headerToken = req.headers['x-approval-token'] as string | undefined;
+        const candidateToken = approvalToken || headerToken;
+
+        const requiresApproval = skill.approvalGate?.required && skill.approvalGate.level !== '0_autonomous';
+        let isApprovedByHuman = false;
+
+        if (requiresApproval) {
+          if (!candidateToken) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: `Execution denied: Skill '${skill.name}' requires human approval at level '${skill.approvalGate.level}'. Please call /propose-run first to review the plan and obtain an approval token.`,
+              requiresApproval: true,
+              gateLevel: skill.approvalGate.level,
+            }));
+            return;
+          }
+
+          const validation = this.approvalManager.validateAndConsumeSkillApproval(
+            candidateToken,
+            skill.id,
+            skill.version,
+            runtimeParams,
+            skill.actions
+          );
+
+          if (!validation.valid) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: validation.error || 'Approval token rejected.' }));
+            return;
+          }
+
+          isApprovedByHuman = true;
+        } else {
+          isApprovedByHuman = true;
+        }
+
+        const missionId = `mission_${Date.now()}`;
+        const result = await this.skillRunner.execute({
+          missionId,
+          skill,
+          params: runtimeParams,
+          isApprovedByHuman,
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (runErr: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: runErr.message }));
+      }
       return;
     }
 

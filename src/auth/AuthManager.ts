@@ -134,14 +134,15 @@ export class AuthManager {
   public verifyLogin(credential: string): boolean {
     if (!credential || typeof credential !== 'string') return false;
 
-    const expected = process.env.LAMS_AUTH_SECRET || process.env.CREATOR_API_KEY;
-    if (!expected) {
-      // If no secret configured (only possible in dev mode), compare with dev secret
-      return crypto.timingSafeEqual(Buffer.from(credential), Buffer.from(this.secretKey));
+    const expected = process.env.LAMS_AUTH_SECRET || process.env.CREATOR_API_KEY || this.secretKey;
+    const credBuf = Buffer.from(credential);
+    const expBuf = Buffer.from(expected);
+    if (credBuf.length !== expBuf.length) return false;
+    try {
+      return crypto.timingSafeEqual(credBuf, expBuf);
+    } catch {
+      return false;
     }
-
-    if (credential.length !== expected.length) return false;
-    return crypto.timingSafeEqual(Buffer.from(credential), Buffer.from(expected));
   }
 
   /**
