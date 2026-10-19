@@ -22,9 +22,26 @@ export class SkillRegistry {
     }
   }
 
+  private lastCustomSkillsMtimeMs = 0;
+
+  private reloadIfStale(): void {
+    try {
+      if (fs.existsSync(this.customSkillsFilePath)) {
+        const stat = fs.statSync(this.customSkillsFilePath);
+        if (stat.mtimeMs > this.lastCustomSkillsMtimeMs) {
+          this.loadCustomSkills();
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   private loadCustomSkills(): void {
     try {
       if (fs.existsSync(this.customSkillsFilePath)) {
+        const stat = fs.statSync(this.customSkillsFilePath);
+        this.lastCustomSkillsMtimeMs = stat.mtimeMs;
         const raw = fs.readFileSync(this.customSkillsFilePath, 'utf-8');
         const list: SkillContract[] = JSON.parse(raw);
         for (const s of list) {
@@ -47,23 +64,33 @@ export class SkillRegistry {
       }
       existing = existing.filter(s => s.id !== skill.id);
       existing.push(skill);
-      fs.writeFileSync(this.customSkillsFilePath, JSON.stringify(existing, null, 2), 'utf-8');
+      const tempPath = `${this.customSkillsFilePath}.${crypto.randomUUID()}.tmp`;
+      fs.writeFileSync(tempPath, JSON.stringify(existing, null, 2), 'utf-8');
+      try {
+        fs.renameSync(tempPath, this.customSkillsFilePath);
+      } catch {
+        fs.copyFileSync(tempPath, this.customSkillsFilePath);
+        try { fs.unlinkSync(tempPath); } catch {}
+      }
+      if (fs.existsSync(this.customSkillsFilePath)) {
+        this.lastCustomSkillsMtimeMs = fs.statSync(this.customSkillsFilePath).mtimeMs;
+      }
     } catch (e: any) {
       console.warn('[SkillRegistry] Could not save custom skill:', e.message);
     }
   }
 
-  public getSkill(idOrKey: string): SkillContract | undefined {
-    let skill = this.skills.get(idOrKey);
-    if (!skill) {
+  public getSkill(idOrKey: string, options?: { forceFresh?: boolean }): SkillContract | undefined {
+    if (options?.forceFresh) {
       this.loadCustomSkills();
-      skill = this.skills.get(idOrKey);
+    } else {
+      this.reloadIfStale();
     }
-    return skill;
+    return this.skills.get(idOrKey);
   }
 
   public listSkills(): SkillContract[] {
-    this.loadCustomSkills();
+    this.reloadIfStale();
     const seen = new Set<string>();
     const list: SkillContract[] = [];
     for (const [key, skill] of this.skills.entries()) {

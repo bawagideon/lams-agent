@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SkillContract } from '../contracts/SkillContract.ts';
+import { computeSkillPlanHash } from '../contracts/SkillContract.ts';
 import { generateEvidenceReceipt } from '../contracts/EvidenceReceipt.ts';
 import type {
   EvidenceReceipt,
@@ -44,6 +45,16 @@ export class SkillRunner {
     this.browserAdapter = new PlaywrightBrowserAdapter();
   }
 
+  public saveReceipt(receipt: EvidenceReceipt): void {
+    try {
+      const receiptsDir = path.resolve('data', 'evidence_receipts');
+      if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
+      fs.writeFileSync(path.join(receiptsDir, `${receipt.receiptId}.json`), JSON.stringify(receipt, null, 2), 'utf-8');
+    } catch (e: any) {
+      console.warn('[SkillRunner] Could not save evidence receipt:', e.message);
+    }
+  }
+
   public async execute(input: SkillExecutionInput): Promise<SkillExecutionResult> {
     const { missionId, skill, params, isApprovedByHuman } = input;
     const startedAt = new Date().toISOString();
@@ -53,6 +64,14 @@ export class SkillRunner {
     const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
     if (isProd && (skill.isSample || skill.status === 'sample_template')) {
       throw new Error(`Execution halted: Skill '${skill.name}' is an unverified sample template. Review and promote to verified production status before executing.`);
+    }
+
+    // 1b. Check machine-verifiable proof for browser skills in production
+    if (isProd && skill.status === 'verified_production' && skill.executionMode === 'browser_agent') {
+      const currentPlanHash = computeSkillPlanHash(skill);
+      if (!skill.verificationProof || skill.verificationProof.planHash !== currentPlanHash) {
+        throw new Error(`Execution halted: Skill '${skill.name}' verification proof is missing or invalidated by altered action plan. Re-verify with a successful test run before executing in production.`);
+      }
     }
 
     // 2. Check Approval Gate
@@ -77,6 +96,7 @@ export class SkillRunner {
         { gateLevel: skill.approvalGate.level, prompt: skill.approvalGate.prompt }
       );
 
+      this.saveReceipt(pendingReceipt);
       return {
         receipt: pendingReceipt,
         requiresApproval: true,
@@ -124,6 +144,7 @@ export class SkillRunner {
           { error: err.message }
         );
 
+        this.saveReceipt(failedReceipt);
         return {
           receipt: failedReceipt,
           outputData: { status: 'FAILED', error: err.message },
@@ -255,6 +276,7 @@ export class SkillRunner {
       outputData
     );
 
+    this.saveReceipt(successReceipt);
     return {
       receipt: successReceipt,
       outputData,

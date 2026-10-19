@@ -12,6 +12,7 @@ import { WorkflowCompiler } from '../compiler/WorkflowCompiler.ts';
 import { DemonstrationRecorder, type ObservedEvent } from '../compiler/DemonstrationRecorder.ts';
 import { SkillRegistry } from '../skills/SkillRegistry.ts';
 import { SkillRunner } from '../skills/SkillRunner.ts';
+import { computeSkillPlanHash } from '../contracts/SkillContract.ts';
 import { AuthManager, type AuthSession } from '../auth/AuthManager.ts';
 import { ApprovalManager } from '../auth/ApprovalManager.ts';
 import { DurableJobQueue } from '../jobs/DurableJobQueue.ts';
@@ -902,6 +903,25 @@ export class MissionControlServer {
       return;
     }
 
+    if (method === 'POST' && url.pathname === '/api/teach/record/video') {
+      const auth = this.checkAuth(req, res, 'approve');
+      if (!auth.authorized) return;
+      try {
+        const recordingsDir = path.resolve('data', 'recordings');
+        if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir, { recursive: true });
+        const sessionId = url.searchParams.get('sessionId') || `rec_${Date.now()}`;
+        const targetPath = path.join(recordingsDir, `${sessionId}.webm`);
+        const fileStream = fs.createWriteStream(targetPath);
+        await pipeline(req, fileStream);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, filePath: targetPath }));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
     if (method === 'GET' && url.pathname === '/api/teach/record/status') {
       const auth = this.checkAuth(req, res, 'read');
       if (!auth.authorized) return;
@@ -1054,24 +1074,75 @@ export class MissionControlServer {
       return;
     }
 
-    // 17c. API: Skill Promotion (Promote draft or sample template to verified production status)
+    // 17c. API: Skill Promotion (Requires verified test run evidence before promotion to verified_production)
     if (method === 'POST' && url.pathname.startsWith('/api/skills/') && url.pathname.endsWith('/promote')) {
       const auth = this.checkAuth(req, res, 'approve');
       if (!auth.authorized) return;
       const skillId = url.pathname.split('/')[3];
-      const skill = this.skillRegistry.getSkill(skillId);
+      const skill = this.skillRegistry.getSkill(skillId, { forceFresh: true });
       if (!skill) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Skill not found' }));
         return;
       }
 
-      skill.status = 'verified_production';
-      skill.isSample = false;
-      this.skillRegistry.registerSkill(skill, true);
+      try {
+        const body = await this.readRequestBody(req);
+        const { testRunReceiptId, reviewerNotes } = JSON.parse(body || '{}');
 
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, skill }));
+        if (!testRunReceiptId || typeof testRunReceiptId !== 'string') {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'Promotion denied: Machine-verifiable testRunReceiptId confirming successful test execution and postcondition verification is required before promotion to verified_production.',
+          }));
+          return;
+        }
+
+        const receiptPath = path.resolve('data', 'evidence_receipts', `${testRunReceiptId}.json`);
+        let receiptData: any = null;
+        if (fs.existsSync(receiptPath)) {
+          receiptData = JSON.parse(fs.readFileSync(receiptPath, 'utf-8'));
+        }
+
+        if (!receiptData || receiptData.status !== 'SUCCESS') {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: `Promotion denied: Evidence receipt '${testRunReceiptId}' was not found or did not confirm SUCCESS status.`,
+          }));
+          return;
+        }
+
+        if (receiptData.skillId && receiptData.skillId !== skill.id) {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: `Promotion denied: Evidence receipt '${testRunReceiptId}' was generated for skill '${receiptData.skillId}', not '${skill.id}'.`,
+          }));
+          return;
+        }
+
+        const currentPlanHash = computeSkillPlanHash(skill);
+
+        skill.verificationProof = {
+          verifiedAt: new Date().toISOString(),
+          verifiedByUserId: auth.session?.userId || 'creator',
+          planHash: currentPlanHash,
+          testRunReceiptId,
+          passedPostconditions: skill.verification.postconditions || [],
+        };
+        skill.status = 'verified_production';
+        skill.isSample = false;
+        this.skillRegistry.registerSkill(skill, true);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          skill,
+          message: `Skill '${skill.name}' successfully verified and promoted to verified_production.`,
+        }));
+      } catch (promoErr: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: promoErr.message }));
+      }
       return;
     }
 

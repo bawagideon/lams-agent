@@ -188,6 +188,72 @@ async function runSsrfTests() {
     }
   }
 
+  // 9. Exhaustive isPrivateIp range verification (IPv6 ULA, Link-Local, Mapped IPv4, Multicast)
+  await test('PlaywrightBrowserAdapter: Exhaustive private/reserved IP identification', async () => {
+    const testCases = [
+      { ip: '127.0.0.1', isPrivate: true },
+      { ip: '10.0.0.1', isPrivate: true },
+      { ip: '172.16.0.1', isPrivate: true },
+      { ip: '192.168.1.1', isPrivate: true },
+      { ip: '169.254.169.254', isPrivate: true },
+      { ip: '100.64.0.1', isPrivate: true },
+      { ip: '198.18.0.1', isPrivate: true },
+      { ip: '198.51.100.1', isPrivate: true },
+      { ip: '203.0.113.1', isPrivate: true },
+      { ip: '224.0.0.1', isPrivate: true },
+      { ip: '255.255.255.255', isPrivate: true },
+      { ip: '::1', isPrivate: true },
+      { ip: 'fe80::1', isPrivate: true },
+      { ip: 'fc00::1', isPrivate: true },
+      { ip: 'fd12:3456:789a:1::1', isPrivate: true },
+      { ip: '::ffff:127.0.0.1', isPrivate: true },
+      { ip: '::ffff:10.0.0.1', isPrivate: true },
+      { ip: '::ffff:169.254.169.254', isPrivate: true },
+      { ip: '8.8.8.8', isPrivate: false },
+      { ip: '1.1.1.1', isPrivate: false },
+      { ip: '93.184.216.34', isPrivate: false },
+      { ip: '2606:4700:4700::1111', isPrivate: false },
+    ];
+
+    for (const tc of testCases) {
+      const result = browserAdapter.isPrivateIp(tc.ip);
+      assert.strictEqual(
+        result,
+        tc.isPrivate,
+        `Expected isPrivateIp('${tc.ip}') to be ${tc.isPrivate}, but got ${result}`
+      );
+    }
+  });
+
+  // 10. DNS rebinding mixed-answer defense: fails closed if any address family answers private IP
+  await test('PlaywrightBrowserAdapter: DNS rebinding mixed safe/unsafe resolution fails closed', async () => {
+    try {
+      // Mock resolver returning a public IP alongside a private loopback IP (classic rebinding behavior)
+      browserAdapter.setDnsResolverForTesting({
+        lookup: async () => [
+          { address: '93.184.216.34', family: 4 },
+          { address: '127.0.0.1', family: 4 },
+        ],
+        resolve4: async () => ['93.184.216.34', '127.0.0.1'],
+        resolve6: async () => [],
+      });
+
+      let threw = false;
+      try {
+        await browserAdapter.validateUrlSafety('http://rebinding-attack.example.org/test', false);
+      } catch (err: any) {
+        threw = true;
+        assert(
+          err.message.includes('SSRF blocked') || err.message.includes('private, loopback, or metadata range'),
+          `Unexpected message: ${err.message}`
+        );
+      }
+      assert.strictEqual(threw, true, 'Mixed safe/private resolution must fail closed as SSRF/rebinding attack');
+    } finally {
+      browserAdapter.setDnsResolverForTesting(null);
+    }
+  });
+
   console.log('\n====================================================');
   console.log(`SSRF Security Results: ${passed} / ${total} tests passed.`);
   console.log('====================================================\n');

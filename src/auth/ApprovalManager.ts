@@ -83,17 +83,30 @@ export class ApprovalManager {
     return ApprovalManager.instance;
   }
 
-  private loadFromFile(): void {
+  private lastLoadedReleaseMtimeMs = 0;
+  private lastLoadedSkillMtimeMs = 0;
+
+  private loadFromFile(force = false): void {
     try {
       if (fs.existsSync(this.filePath)) {
-        const raw = fs.readFileSync(this.filePath, 'utf-8');
-        const items: CanonicalReleasePlan[] = JSON.parse(raw);
-        items.forEach(item => this.proposals.set(item.id, item));
+        const stat = fs.statSync(this.filePath);
+        if (force || stat.mtimeMs > this.lastLoadedReleaseMtimeMs) {
+          this.lastLoadedReleaseMtimeMs = stat.mtimeMs;
+          const raw = fs.readFileSync(this.filePath, 'utf-8');
+          const items: CanonicalReleasePlan[] = JSON.parse(raw);
+          this.proposals.clear();
+          items.forEach(item => this.proposals.set(item.id, item));
+        }
       }
       if (fs.existsSync(this.skillFilePath)) {
-        const rawSkill = fs.readFileSync(this.skillFilePath, 'utf-8');
-        const skillItems: CanonicalSkillExecutionPlan[] = JSON.parse(rawSkill);
-        skillItems.forEach(item => this.skillProposals.set(item.id, item));
+        const stat = fs.statSync(this.skillFilePath);
+        if (force || stat.mtimeMs > this.lastLoadedSkillMtimeMs) {
+          this.lastLoadedSkillMtimeMs = stat.mtimeMs;
+          const rawSkill = fs.readFileSync(this.skillFilePath, 'utf-8');
+          const skillItems: CanonicalSkillExecutionPlan[] = JSON.parse(rawSkill);
+          this.skillProposals.clear();
+          skillItems.forEach(item => this.skillProposals.set(item.id, item));
+        }
       }
     } catch (err: any) {
       console.warn(`[ApprovalManager] Error reading local approvals file: ${err.message}`);
@@ -106,7 +119,17 @@ export class ApprovalManager {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     const array = Array.from(this.proposals.values());
-    fs.writeFileSync(this.filePath, JSON.stringify(array, null, 2), 'utf-8');
+    const tempFile = `${this.filePath}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(array, null, 2), 'utf-8');
+    try {
+      fs.renameSync(tempFile, this.filePath);
+    } catch {
+      fs.copyFileSync(tempFile, this.filePath);
+      try { fs.unlinkSync(tempFile); } catch {}
+    }
+    if (fs.existsSync(this.filePath)) {
+      this.lastLoadedReleaseMtimeMs = fs.statSync(this.filePath).mtimeMs;
+    }
   }
 
   private persistSkillProposalsOrThrow(): void {
@@ -115,7 +138,17 @@ export class ApprovalManager {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     const array = Array.from(this.skillProposals.values());
-    fs.writeFileSync(this.skillFilePath, JSON.stringify(array, null, 2), 'utf-8');
+    const tempFile = `${this.skillFilePath}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(tempFile, JSON.stringify(array, null, 2), 'utf-8');
+    try {
+      fs.renameSync(tempFile, this.skillFilePath);
+    } catch {
+      fs.copyFileSync(tempFile, this.skillFilePath);
+      try { fs.unlinkSync(tempFile); } catch {}
+    }
+    if (fs.existsSync(this.skillFilePath)) {
+      this.lastLoadedSkillMtimeMs = fs.statSync(this.skillFilePath).mtimeMs;
+    }
   }
 
   /**
@@ -236,11 +269,15 @@ export class ApprovalManager {
           created_at: proposal.createdAt,
           expires_at: proposal.expiresAt,
         });
-        if (error && !error.message.includes('relation "public.agent_approvals" does not exist')) {
-          throw new Error(`Database approval persistence failed: ${error.message}`);
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (error) {
+          if (isProd || !error.message.includes('does not exist')) {
+            throw new Error(`Database approval persistence failed: ${error.message}`);
+          }
         }
       } catch (dbErr: any) {
-        if (!dbErr.message.includes('does not exist')) {
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (isProd || !dbErr.message.includes('does not exist')) {
           throw dbErr;
         }
       }
@@ -263,6 +300,7 @@ export class ApprovalManager {
     currentVideoFilePath: string,
     callerUserId?: string
   ): Promise<{ valid: boolean; proposal?: CanonicalReleasePlan; error?: string }> {
+    this.loadFromFile();
     if (!approvalToken || typeof approvalToken !== 'string') {
       return { valid: false, error: 'Release denied: Missing required approval token.' };
     }
@@ -338,14 +376,18 @@ export class ApprovalManager {
           .eq('status', 'PENDING')
           .select();
 
-        if (error && !error.message.includes('does not exist')) {
-          throw new Error(`Database consumption failed: ${error.message}`);
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (error) {
+          if (isProd || !error.message.includes('does not exist')) {
+            throw new Error(`Database consumption failed: ${error.message}`);
+          }
         }
         if (data && data.length === 0) {
           return { valid: false, error: 'Release denied: Concurrent release attempt detected; proposal already consumed.' };
         }
       } catch (dbErr: any) {
-        if (!dbErr.message.includes('does not exist')) {
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (isProd || !dbErr.message.includes('does not exist')) {
           throw dbErr;
         }
       }
@@ -467,7 +509,7 @@ export class ApprovalManager {
     // Persist to Supabase if connected
     if (this.supabase) {
       try {
-        await this.supabase.from('agent_approvals').insert({
+        const { error } = await this.supabase.from('agent_approvals').insert({
           id: proposal.id,
           episode_id: `skill:${proposal.skillId}`,
           title: proposal.skillName,
@@ -480,9 +522,16 @@ export class ApprovalManager {
           created_at: proposal.createdAt,
           expires_at: proposal.expiresAt,
         });
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (error) {
+          if (isProd || !error.message?.includes('does not exist')) {
+            throw new Error(`Database approval persistence failed: ${error.message}`);
+          }
+        }
       } catch (err: any) {
-        if (!err.message?.includes('does not exist')) {
-          console.warn(`[ApprovalManager] Supabase skill approval sync warning: ${err.message}`);
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (isProd || !err.message?.includes('does not exist')) {
+          throw err;
         }
       }
     }
@@ -503,6 +552,7 @@ export class ApprovalManager {
     skillActions: Array<{ step: number; name: string; action: string }>,
     executingUserId?: string
   ): Promise<{ valid: boolean; proposal?: CanonicalSkillExecutionPlan; error?: string }> {
+    this.loadFromFile();
     if (!approvalToken || typeof approvalToken !== 'string') {
       return { valid: false, error: 'Execution denied: Missing required cryptographic approval token.' };
     }
@@ -513,6 +563,33 @@ export class ApprovalManager {
     }
 
     const [proposalId, providedSig] = parts;
+
+    // Check authoritative Supabase state if connected
+    if (this.supabase) {
+      try {
+        const { data: dbRows, error: fetchErr } = await this.supabase
+          .from('agent_approvals')
+          .select('status')
+          .eq('id', proposalId);
+
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (fetchErr) {
+          if (isProd || !fetchErr.message.includes('does not exist')) {
+            throw new Error(`Authoritative database check failed: ${fetchErr.message}`);
+          }
+        } else if (dbRows && dbRows.length > 0) {
+          if (dbRows[0].status === 'CONSUMED') {
+            return { valid: false, error: 'Execution denied: Approval proposal has already been consumed (replay rejected).' };
+          }
+        }
+      } catch (dbCheckErr: any) {
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (isProd || !dbCheckErr.message.includes('does not exist')) {
+          throw dbCheckErr;
+        }
+      }
+    }
+
     const proposal = this.skillProposals.get(proposalId);
     if (!proposal) {
       return { valid: false, error: 'Execution denied: Approval proposal not found or expired.' };
@@ -590,14 +667,18 @@ export class ApprovalManager {
           .eq('status', 'APPROVED')
           .select();
 
-        if (error && !error.message.includes('does not exist')) {
-          throw new Error(`Database consumption failed: ${error.message}`);
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (error) {
+          if (isProd || !error.message.includes('does not exist')) {
+            throw new Error(`Database consumption failed: ${error.message}`);
+          }
         }
         if (data && data.length === 0) {
           return { valid: false, error: 'Execution denied: Concurrent execution attempt detected; proposal already consumed.' };
         }
       } catch (dbErr: any) {
-        if (!dbErr.message.includes('does not exist')) {
+        const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+        if (isProd || !dbErr.message.includes('does not exist')) {
           throw dbErr;
         }
       }
@@ -612,6 +693,7 @@ export class ApprovalManager {
   }
 
   public getSkillProposal(proposalId: string): CanonicalSkillExecutionPlan | undefined {
+    this.loadFromFile();
     return this.skillProposals.get(proposalId);
   }
 }

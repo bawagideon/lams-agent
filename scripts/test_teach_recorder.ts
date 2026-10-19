@@ -6,6 +6,8 @@ import { WorkflowCompiler } from '../src/compiler/WorkflowCompiler.ts';
 import { SkillRegistry } from '../src/skills/SkillRegistry.ts';
 import { SkillRunner } from '../src/skills/SkillRunner.ts';
 import { AuthManager } from '../src/auth/AuthManager.ts';
+import { ApprovalManager } from '../src/auth/ApprovalManager.ts';
+import { computeSkillPlanHash } from '../src/contracts/SkillContract.ts';
 import { PlaywrightBrowserAdapter } from '../src/adapters/browser/PlaywrightBrowserAdapter.ts';
 
 const BASE_URL = 'http://127.0.0.1:4200';
@@ -310,29 +312,108 @@ async function runTeachRecorderTests() {
     assert.ok(secondValidation.error?.includes('already been consumed'), 'Error must specify already consumed');
   });
 
-  // Test 11: Machine-enforced sample template status & promotion
-  await test('Sample Templates: Marked non-production and require promotion to verified status', async () => {
-    const sampleComp = compiler.compile('Sample Template Skill', recordedEvents, { isSampleTemplate: true });
-    assert.strictEqual(sampleComp.skill.isSample, true);
-    assert.strictEqual(sampleComp.skill.status, 'sample_template');
-    assert.strictEqual(sampleComp.skill.approvalGate.required, true);
+  // Test 11: Machine-enforced sample template status, verifiable promotion & plan tamper defense
+  await test('Sample Templates: Require machine-verifiable evidence receipt for promotion and detect plan tampering', async () => {
+    const sampleSkill = {
+      schemaVersion: '1.0',
+      id: 'sample_template_skill',
+      name: 'Sample Template Skill',
+      version: '1.0.0',
+      description: 'Sample template skill for testing promotion',
+      executionMode: 'browser_agent' as const,
+      isSample: true,
+      status: 'sample_template' as const,
+      inputs: {},
+      preconditions: [],
+      approvalGate: { required: true, level: '2_approval_gate' as const, prompt: 'Approve promotion test' },
+      actions: [
+        {
+          step: 1,
+          name: 'Navigate to Example Domain',
+          action: 'browser.navigate',
+          parameters: { target: 'https://example.com' },
+        },
+        {
+          step: 2,
+          name: 'Verify Learn More Link',
+          action: 'action.verify',
+          parameters: { selector: 'a', expectedText: 'Learn more' },
+        },
+      ],
+      verification: { postconditions: [], proofRequired: false },
+      failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
+    };
 
     const registry = new SkillRegistry();
-    registry.registerSkill(sampleComp.skill, true);
+    registry.registerSkill(sampleSkill, true);
 
-    // Call promotion endpoint
-    const promoRes = await fetch(`${BASE_URL}/api/skills/${sampleComp.skill.id}/promote`, {
+    // 11a: Call promotion endpoint without testRunReceiptId -> must return HTTP 422
+    const unverifiedRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Cookie: authCookie,
         'X-CSRF-Token': authCsrfToken,
       },
+      body: JSON.stringify({ reviewerNotes: 'Attempting unverified promotion' }),
     });
-    assert.strictEqual(promoRes.status, 200);
+    assert.strictEqual(unverifiedRes.status, 422, 'Unverified promotion attempt must be rejected with 422');
+    const unverifiedData = await unverifiedRes.json();
+    assert.ok(unverifiedData.error?.includes('testRunReceiptId confirming successful test execution'), 'Must require testRunReceiptId');
+
+    // 11b: Execute the skill test run using SkillRunner to generate genuine evidence receipt
+    const runner = new SkillRunner();
+    const testExecution = await runner.execute({
+      missionId: 'test-mission-verify-sample',
+      skill: sampleSkill,
+      params: {},
+      isApprovedByHuman: true,
+    });
+    assert.strictEqual(testExecution.receipt.status, 'SUCCESS', 'Test execution of sample skill must succeed');
+    const validReceiptId = testExecution.receipt.receiptId;
+    assert.ok(fs.existsSync(path.resolve('data', 'evidence_receipts', `${validReceiptId}.json`)), 'Evidence receipt must be saved to disk');
+
+    // 11c: Call promotion endpoint with valid testRunReceiptId -> must succeed with 200
+    const promoRes = await fetch(`${BASE_URL}/api/skills/${sampleSkill.id}/promote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+        'X-CSRF-Token': authCsrfToken,
+      },
+      body: JSON.stringify({ testRunReceiptId: validReceiptId, reviewerNotes: 'Verified via test run' }),
+    });
+    assert.strictEqual(promoRes.status, 200, `Expected 200, got ${promoRes.status}`);
     const promoData = await promoRes.json();
     assert.strictEqual(promoData.skill.status, 'verified_production');
     assert.strictEqual(promoData.skill.isSample, false);
+    assert.ok(promoData.skill.verificationProof, 'Skill must have verificationProof');
+    assert.strictEqual(promoData.skill.verificationProof.testRunReceiptId, validReceiptId);
+
+    // 11d: Tamper Defense: If actions are modified post-promotion, production execution must fail closed
+    const promotedSkill = promoData.skill;
+    const tamperedSkill = JSON.parse(JSON.stringify(promotedSkill));
+    tamperedSkill.actions[0].parameters.target = 'https://example.org/tampered';
+
+    const origEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      let threw = false;
+      try {
+        await runner.execute({
+          missionId: 'test-mission-tamper',
+          skill: tamperedSkill,
+          params: {},
+          isApprovedByHuman: true,
+        });
+      } catch (err: any) {
+        threw = true;
+        assert(err.message.includes('verification proof is missing or invalidated by altered action plan'), `Unexpected error: ${err.message}`);
+      }
+      assert.strictEqual(threw, true, 'SkillRunner must fail closed when action plan does not match verification proof planHash in production');
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
   });
 
   // Test 12: Browser Prerequisite Check
@@ -404,6 +485,79 @@ async function runTeachRecorderTests() {
     assert.strictEqual(result.receipt.steps[0].status, 'PASS', 'Step 1 should pass');
     assert.strictEqual(result.receipt.steps[1].status, 'FAIL', 'Step 2 must truthfully be marked as FAIL');
     assert.ok(result.receipt.steps[1].detail.includes('Timeout') || result.receipt.steps[1].detail.includes('waiting for locator'), 'Error detail must record assertion failure');
+  });
+
+  // Test 15: Cross-Process Skill Cache Invalidation
+  await test('SkillRegistry: Detects disk changes from separate processes via mtime tracking without restart', async () => {
+    const registryA = new SkillRegistry();
+    const registryB = new SkillRegistry();
+
+    const uniqueId = `cross_proc_test_${Date.now()}`;
+    const newSkill = {
+      schemaVersion: '1.0',
+      id: uniqueId,
+      name: 'Cross Process Test Skill',
+      version: '1.0.0',
+      description: 'Skill written by registry B',
+      executionMode: 'browser_agent' as const,
+      isSample: false,
+      status: 'draft' as const,
+      inputs: {},
+      preconditions: [],
+      approvalGate: { required: false, level: '0_autonomous' as const, prompt: '' },
+      actions: [],
+      verification: { postconditions: [], proofRequired: false },
+      failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
+    };
+
+    // registryA does not know this skill yet
+    assert.strictEqual(registryA.getSkill(uniqueId), undefined, 'registryA should not have new skill initially');
+
+    // Save via registryB to disk
+    registryB.saveCustomSkill(newSkill);
+
+    // registryA must now find it without server or process restart due to mtime invalidation
+    const foundByA = registryA.getSkill(uniqueId);
+    assert.ok(foundByA, 'registryA must reload and find skill written by registryB');
+    assert.strictEqual(foundByA.id, uniqueId);
+
+    // Cleanup temporary test skill from custom_skills.json
+    try {
+      const skillsPath = path.resolve('data', 'custom_skills.json');
+      if (fs.existsSync(skillsPath)) {
+        const raw = JSON.parse(fs.readFileSync(skillsPath, 'utf-8'));
+        const filtered = raw.filter((s: any) => !s.id.startsWith('cross_proc_test_'));
+        fs.writeFileSync(skillsPath, JSON.stringify(filtered, null, 2), 'utf-8');
+      }
+    } catch {}
+  });
+
+  // Test 16: Restart Recovery of ApprovalManager from atomic disk persistence
+  await test('ApprovalManager: Persists state atomically and recovers proposals across re-instantiation', async () => {
+    const approvalMgr = ApprovalManager.getInstance();
+    const testSkill = {
+      id: 'restart_recovery_skill',
+      name: 'Restart Recovery Skill',
+      version: '1.0.0',
+      actions: [{ step: 1, name: 'Step 1', action: 'ui.click' }],
+      inputs: {},
+      approvalGate: { required: true, level: '2_approval_gate', prompt: 'Approve restart test' },
+    };
+
+    const { proposalId, proposal } = approvalMgr.createSkillExecutionProposal(
+      testSkill as any,
+      { testParam: 'val123' },
+      'test-creator'
+    );
+    assert.strictEqual(proposal.status, 'PROPOSED');
+
+    // Force re-reading from disk to simulate process restart
+    approvalMgr.loadFromFile(true);
+    const recovered = approvalMgr.getSkillProposal(proposalId);
+    assert.ok(recovered, 'Proposal must be recovered from atomic file storage');
+    assert.strictEqual(recovered.id, proposalId);
+    assert.strictEqual(recovered.planHash, proposal.planHash);
+    assert.strictEqual(recovered.status, 'PROPOSED');
   });
 
   console.log('\n====================================================');

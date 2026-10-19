@@ -15,6 +15,14 @@ export const SkillApprovalGateSchema = z.object({
   previewAssetKey: z.string().optional(),
 });
 
+export const SkillVerificationProofSchema = z.object({
+  verifiedAt: z.string(),
+  verifiedByUserId: z.string(),
+  planHash: z.string(),
+  testRunReceiptId: z.string(),
+  passedPostconditions: z.array(z.string()).default([]),
+});
+
 export const SkillContractSchema = z.object({
   schemaVersion: z.literal('1.0'),
   id: z.string(),
@@ -24,6 +32,7 @@ export const SkillContractSchema = z.object({
   executionMode: z.enum(['deterministic_api', 'file_draft', 'browser_agent', 'desktop_demonstration']),
   isSample: z.boolean().optional(),
   status: z.enum(['draft', 'sample_template', 'verified_production']).optional(),
+  verificationProof: SkillVerificationProofSchema.optional(),
   inputs: z.record(z.string(), z.object({
     type: z.string(),
     description: z.string(),
@@ -45,3 +54,16 @@ export const SkillContractSchema = z.object({
 export type SkillContract = z.infer<typeof SkillContractSchema>;
 export type SkillActionStep = z.infer<typeof SkillActionStepSchema>;
 export type SkillApprovalGate = z.infer<typeof SkillApprovalGateSchema>;
+export type SkillVerificationProof = z.infer<typeof SkillVerificationProofSchema>;
+
+import crypto from 'node:crypto';
+
+export function computeSkillPlanHash(skill: Pick<SkillContract, 'id' | 'version' | 'actions' | 'inputs'>): string {
+  const payload = JSON.stringify({
+    id: skill.id,
+    version: skill.version,
+    actions: skill.actions,
+    inputs: skill.inputs,
+  });
+  return crypto.createHash('sha256').update(payload).digest('hex');
+}

@@ -1462,11 +1462,44 @@ export function renderDashboardHtml(
         updateRecordingTimer();
         recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
 
-        // Auto log stream start event
-        await recordStudioEvent('navigate', {
-          windowTitle: 'Screen Viewfinder Active',
-          inputData: 'User focused workspace window'
-        });
+        // Real DOM Interaction Observation Instrumentation
+        function attachLiveWorkspaceListeners() {
+          const clickHandler = (e) => {
+            if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+            if (e.target.closest('#view-skills') || e.target.closest('header') || e.target.closest('nav')) return;
+            const target = e.target;
+            const tag = target.tagName ? target.tagName.toLowerCase() : 'element';
+            const text = (target.innerText || target.value || target.getAttribute('aria-label') || '').substring(0, 40).trim();
+            const selector = tag + (target.id ? '#' + target.id : (target.className && typeof target.className === 'string' ? '.' + target.className.split(' ')[0] : ''));
+            recordStudioEvent('click', {
+              target: text || tag,
+              selector: selector,
+              provenance: 'observed',
+            });
+          };
+
+          const inputHandler = (e) => {
+            if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+            if (e.target.closest('#view-skills')) return;
+            const target = e.target;
+            const isPassword = target.type === 'password' || /secret|password|token|key/i.test(target.name || target.id || '');
+            const value = isPassword ? '[REDACTED_SECRET]' : String(target.value || '').substring(0, 100);
+            const selector = target.tagName.toLowerCase() + (target.id ? '#' + target.id : (target.name ? '[name="' + target.name + '"]' : ''));
+            recordStudioEvent('keyboard', {
+              value: value,
+              selector: selector,
+              provenance: 'observed',
+            });
+          };
+
+          document.addEventListener('click', clickHandler, true);
+          document.addEventListener('change', inputHandler, true);
+          window.__liveCaptureCleanup = () => {
+            document.removeEventListener('click', clickHandler, true);
+            document.removeEventListener('change', inputHandler, true);
+          };
+        }
+        attachLiveWorkspaceListeners();
 
         // Listen for user stopping sharing via browser native stop button
         const track = stream.getVideoTracks()[0];
@@ -1486,6 +1519,10 @@ export function renderDashboardHtml(
         clearInterval(recordingTimerInterval);
         recordingTimerInterval = null;
       }
+      if (typeof window.__liveCaptureCleanup === 'function') {
+        window.__liveCaptureCleanup();
+        window.__liveCaptureCleanup = null;
+      }
 
       // Await real MediaRecorder onstop event before assembling blob
       const assembleMediaPromise = new Promise((resolve) => {
@@ -1497,6 +1534,12 @@ export function renderDashboardHtml(
           if (recordedMediaChunks.length > 0) {
             const blob = new Blob(recordedMediaChunks, { type: 'video/webm' });
             const blobUrl = URL.createObjectURL(blob);
+            // Durably upload video recording to server
+            fetch('/api/teach/record/video?sessionId=' + encodeURIComponent('rec_' + Date.now()), {
+              method: 'POST',
+              headers: { 'Content-Type': 'video/webm' },
+              body: blob
+            }).catch(e => console.warn('Could not sync video to server:', e));
             resolve(blobUrl);
           } else {
             resolve(null);
@@ -1579,28 +1622,46 @@ export function renderDashboardHtml(
     async function recordStudioEvent(eventType, options) {
       options = options || {};
       const targetApp = document.getElementById('recorderTargetApp')?.value || 'Creator Studio';
+      const provenance = options.provenance || (window.__isPresetTemplateLoaded ? 'synthetic_template' : 'manual_studio');
       const ev = {
+        id: 'ev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
         timestamp: Date.now(),
         application: targetApp,
         windowTitle: options.windowTitle || (targetApp + ' View'),
         eventType: eventType,
         targetElement: options.targetElement || (options.target ? { text: options.target, selector: options.selector } : undefined),
         inputData: options.inputData || options.value || undefined,
+        provenance: provenance,
+        persisting: true,
+        persisted: false,
+        persistError: null,
       };
 
       localRecordedEvents.push(ev);
       renderRecordedEventsStream();
 
-      // Dispatch to backend recorder
+      // Dispatch to backend recorder with truthful state acknowledgement
       try {
         const res = await fetch('/api/teach/record/event', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(ev)
         });
-        if (!res.ok) console.warn('Record event HTTP error: ' + res.status);
+        if (res.ok) {
+          ev.persisting = false;
+          ev.persisted = true;
+          renderRecordedEventsStream();
+        } else {
+          ev.persisting = false;
+          ev.persisted = false;
+          ev.persistError = 'Server failed to record step (HTTP ' + res.status + ')';
+          renderRecordedEventsStream();
+        }
       } catch (err) {
-        console.warn('Network error recording event:', err);
+        ev.persisting = false;
+        ev.persisted = false;
+        ev.persistError = 'Network error: unsaved';
+        renderRecordedEventsStream();
       }
     }
 
@@ -1652,6 +1713,22 @@ export function renderDashboardHtml(
         const label = ev.targetElement?.text || ev.inputData || ev.windowTitle || 'Action';
         const sub = ev.inputData && ev.targetElement?.text ? ('Input: ' + ev.inputData) : (ev.targetElement?.selector || ev.application);
 
+        const provMap = {
+          observed: '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wide">Observed</span>',
+          manual_studio: '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 uppercase tracking-wide">Manual Step</span>',
+          synthetic_template: '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wide">Sample Template</span>',
+        };
+        const provBadge = provMap[ev.provenance] || provMap.manual_studio;
+
+        let syncStatusHtml = '';
+        if (ev.persisting) {
+          syncStatusHtml = '<span class="text-[9px] font-medium text-amber-500 flex items-center gap-0.5"><span>⏳</span><span>Syncing...</span></span>';
+        } else if (ev.persistError) {
+          syncStatusHtml = '<span class="text-[9px] font-medium text-rose-600 flex items-center gap-0.5" title="' + clientEscapeHtml(ev.persistError) + '"><span>⚠️</span><span>Unsaved</span></span>';
+        } else {
+          syncStatusHtml = '<span class="text-[9px] font-medium text-emerald-600 flex items-center gap-0.5"><span>✓</span><span>Saved</span></span>';
+        }
+
         html += '<div class="bg-white border border-gray-200/90 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-2xs hover:border-indigo-200 transition">' +
           '<div class="flex items-center gap-2.5 min-w-0">' +
             '<span class="text-[10px] font-mono font-bold text-gray-400">#' + (idx + 1) + '</span>' +
@@ -1659,14 +1736,18 @@ export function renderDashboardHtml(
               '<span>' + icon + '</span>' +
               '<span>' + clientEscapeHtml(ev.eventType) + '</span>' +
             '</span>' +
+            provBadge +
             '<div class="min-w-0 truncate">' +
               '<p class="font-semibold text-gray-900 truncate text-[11px]">' + clientEscapeHtml(String(label)) + '</p>' +
               '<p class="text-[10px] text-gray-400 truncate">' + clientEscapeHtml(String(sub)) + '</p>' +
             '</div>' +
           '</div>' +
-          '<button onclick="removeRecordedEvent(' + idx + ')" class="text-gray-300 hover:text-rose-500 font-bold px-1.5 py-0.5 rounded text-xs transition" title="Delete Step">' +
-            '✕' +
-          '</button>' +
+          '<div class="flex items-center gap-2 shrink-0">' +
+            syncStatusHtml +
+            '<button onclick="removeRecordedEvent(' + idx + ')" class="text-gray-300 hover:text-rose-500 font-bold px-1.5 py-0.5 rounded text-xs transition" title="Delete Step">' +
+              '✕' +
+            '</button>' +
+          '</div>' +
         '</div>';
       });
 

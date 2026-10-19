@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import dns from 'node:dns/promises';
+import http from 'node:http';
+import net from 'node:net';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 
 export interface BrowserStepResult {
@@ -18,6 +20,11 @@ export class PlaywrightBrowserAdapter {
   private page: Page | null = null;
   private evidenceDir: string;
   private currentAllowLoopback = false;
+  private dnsResolver: typeof dns = dns;
+
+  public setDnsResolverForTesting(customResolver: any): void {
+    this.dnsResolver = customResolver || dns;
+  }
 
   constructor(evidenceDir?: string) {
     this.evidenceDir = evidenceDir || path.resolve('data', 'evidence');
@@ -112,23 +119,52 @@ export class PlaywrightBrowserAdapter {
       return;
     }
 
-    // Resolve DNS and strictly check all returned address families
+    // Resolve DNS and strictly check all returned address families (IPv4 A and IPv6 AAAA)
+    const resolvedIps = new Set<string>();
+
     try {
-      const addresses = await dns.resolve(hostname);
-      if (!addresses || addresses.length === 0) {
-        throw new Error(`DNS returned 0 records for host '${hostname}'.`);
-      }
-      for (const ip of addresses) {
-        if (this.isPrivateIp(ip)) {
-          if (!allowLoopback || !this.isLoopbackIp(ip)) {
-            throw new Error(`SSRF blocked: Resolved IP ${ip} for host '${hostname}' is in a private, loopback, or metadata range.`);
-          }
+      const lookups = await this.dnsResolver.lookup(hostname, { all: true } as any);
+      if (Array.isArray(lookups)) {
+        for (const item of lookups) {
+          if (item?.address) resolvedIps.add(item.address);
         }
       }
-    } catch (err: any) {
-      if (err.message && err.message.includes('SSRF blocked')) throw err;
-      // Fail closed on DNS errors to prevent rebinding and unresolvable targets
-      throw new Error(`SSRF blocked: DNS resolution failed for host '${hostname}': ${err.message}`);
+    } catch {}
+
+    try {
+      const aRecords = await this.dnsResolver.resolve4(hostname);
+      if (Array.isArray(aRecords)) {
+        for (const ip of aRecords) resolvedIps.add(ip);
+      }
+    } catch {}
+
+    try {
+      const aaaaRecords = await this.dnsResolver.resolve6(hostname);
+      if (Array.isArray(aaaaRecords)) {
+        for (const ip of aaaaRecords) resolvedIps.add(ip);
+      }
+    } catch {}
+
+    if (resolvedIps.size === 0) {
+      throw new Error(`SSRF blocked: DNS resolution failed or returned 0 records for host '${hostname}'.`);
+    }
+
+    let hasSafe = false;
+    let hasUnsafe = false;
+
+    for (const ip of resolvedIps) {
+      if (this.isPrivateIp(ip)) {
+        if (!allowLoopback || !this.isLoopbackIp(ip)) {
+          hasUnsafe = true;
+          throw new Error(`SSRF blocked: Resolved IP ${ip} for host '${hostname}' is in a private, loopback, or metadata range.`);
+        }
+      } else {
+        hasSafe = true;
+      }
+    }
+
+    if (hasSafe && hasUnsafe) {
+      throw new Error(`SSRF blocked: Host '${hostname}' resolved to mixed safe and private IPs (DNS rebinding attempt).`);
     }
   }
 
@@ -196,6 +232,86 @@ export class PlaywrightBrowserAdapter {
     return false;
   }
 
+  private proxyServer: http.Server | null = null;
+  private proxyPort = 0;
+
+  private async ensureProxyServer(): Promise<number> {
+    if (this.proxyServer && this.proxyPort > 0) {
+      return this.proxyPort;
+    }
+
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        const targetUrl = req.url || '';
+        this.validateUrlSafety(targetUrl, this.currentAllowLoopback)
+          .then(() => {
+            const proxyReq = http.request(
+              targetUrl,
+              {
+                method: req.method,
+                headers: req.headers,
+              },
+              (proxyRes) => {
+                res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+                proxyRes.pipe(res);
+              }
+            );
+            proxyReq.on('error', (err) => {
+              res.writeHead(502, { 'Content-Type': 'text/plain' });
+              res.end(`Bad Gateway: ${err.message}`);
+            });
+            req.pipe(proxyReq);
+          })
+          .catch((err) => {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end(`SSRF Blocked: ${err.message}`);
+          });
+      });
+
+      server.on('connect', (req, clientSocket, head) => {
+        const [host, portStr] = (req.url || '').split(':');
+        const port = parseInt(portStr, 10) || 443;
+        const targetUrl = `https://${host}:${port}`;
+
+        this.validateUrlSafety(targetUrl, this.currentAllowLoopback)
+          .then(async () => {
+            let safeIp = host;
+            try {
+              const lookups: any = await this.dnsResolver.lookup(host, { all: true } as any);
+              if (Array.isArray(lookups) && lookups.length > 0) {
+                safeIp = lookups[0].address;
+              } else if (lookups && lookups.address) {
+                safeIp = lookups.address;
+              }
+            } catch {}
+
+            const targetSocket = net.connect({ host: safeIp, port }, () => {
+              clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+              if (head && head.length > 0) targetSocket.write(head);
+              clientSocket.pipe(targetSocket);
+              targetSocket.pipe(clientSocket);
+            });
+
+            targetSocket.on('error', () => clientSocket.destroy());
+            clientSocket.on('error', () => targetSocket.destroy());
+          })
+          .catch(() => {
+            clientSocket.write('HTTP/1.1 403 Forbidden\r\n\r\nSSRF blocked');
+            clientSocket.destroy();
+          });
+      });
+
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address() as net.AddressInfo;
+        this.proxyPort = addr.port;
+        this.proxyServer = server;
+        resolve(this.proxyPort);
+      });
+
+      server.on('error', (err) => reject(err));
+    });
+  }
+
   /**
    * Ensures a browser instance and page are initialized.
    * Attaches network-level route interception to enforce SSRF validation on all requests & redirects.
@@ -206,6 +322,8 @@ export class PlaywrightBrowserAdapter {
     if (this.page && !this.page.isClosed()) {
       return this.page;
     }
+
+    const proxyPort = await this.ensureProxyServer();
 
     if (!this.browser) {
       // Diagnostic check for prerequisites
@@ -229,6 +347,7 @@ export class PlaywrightBrowserAdapter {
     }
 
     this.context = await this.browser.newContext({
+      proxy: { server: `http://127.0.0.1:${proxyPort}` },
       viewport: { width: 1280, height: 720 },
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) LAMS-Agent/1.0',
     });
@@ -422,6 +541,11 @@ export class PlaywrightBrowserAdapter {
       if (this.browser) {
         await this.browser.close().catch(() => {});
         this.browser = null;
+      }
+      if (this.proxyServer) {
+        try { this.proxyServer.close(); } catch {}
+        this.proxyServer = null;
+        this.proxyPort = 0;
       }
     } catch {}
   }
