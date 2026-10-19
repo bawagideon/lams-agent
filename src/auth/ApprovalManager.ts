@@ -20,7 +20,7 @@ export interface CanonicalReleasePlan {
   requireThumbnail: boolean;
   thumbnailChecksum?: string | null;
   approvedByUserId: string;
-  status: 'PENDING' | 'CONSUMED' | 'EXPIRED' | 'REVOKED';
+  status: 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED' | 'REVOKED';
   createdAt: string;
   expiresAt: string;
   consumedAt?: string;

@@ -1573,6 +1573,11 @@ export function renderDashboardHtml(
         }
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Failed to assemble CapCut draft');
+        if (data.queued) {
+          appendChatMessage('agent', '⏳ CapCut draft assembly is queued for the Windows Desktop Worker (Job ID: ' + (data.jobId || 'pending') + '). Waiting for worker to process.');
+          alert('⏳ CapCut draft assembly is queued for the Windows Desktop Worker.\\nJob ID: ' + (data.jobId || 'pending') + '\\nThis is not complete yet. Confirm the worker finishes the job before opening CapCut.');
+          return;
+        }
         appendChatMessage('agent', '✓ CapCut draft created with ' + (data.tracksCount || '4') + ' tracks. Ready to open in CapCut Desktop.');
         showCapCutSuccessModal(data, id);
       } catch (err) {

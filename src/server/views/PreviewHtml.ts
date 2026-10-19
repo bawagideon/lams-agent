@@ -149,12 +149,15 @@ export function renderPreviewHtml(
           ${episode.scenes.map((sc, idx) => `
             <div 
               id="scene-card-${escapeHtml(sc.id)}"
+              role="button"
+              tabindex="0"
+              aria-label="Play scene ${sc.sceneNumber}: ${escapeHtml(sc.title)}"
+              class="scene-card-item p-4 bg-gray-50/80 border border-gray-200 hover:border-indigo-300 rounded-2xl cursor-pointer transition flex items-start gap-4 group card-hover ${idx === 0 && !exportedVideo ? 'active-scene-card' : ''}"
               data-video-url="${escapeHtml(sc.videoUrl || '')}"
               data-scene-number="${sc.sceneNumber}"
               data-title="${escapeHtml(sc.title)}"
               data-scene-id="${escapeHtml(sc.id)}"
               data-prompt="${escapeHtml(sc.visualPrompt || '')}"
-              class="scene-card-item p-4 bg-gray-50/80 border border-gray-200 hover:border-indigo-300 rounded-2xl cursor-pointer transition flex items-start gap-4 group card-hover ${idx === 0 && !exportedVideo ? 'active-scene-card' : ''}"
             >
               <div class="flex-shrink-0 w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-[#4338ca] group-hover:bg-[#4338ca] group-hover:text-white transition shadow-sm">
                 #${sc.sceneNumber}
@@ -621,6 +624,10 @@ export function renderPreviewHtml(
         }
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Failed to assemble CapCut draft');
+        if (data.queued) {
+          alert('⏳ CapCut draft assembly is queued for the Windows Desktop Worker.\nJob ID: ' + (data.jobId || 'pending') + '\nThis is not complete yet. Confirm the worker finishes the job before opening CapCut.');
+          return;
+        }
         showCapCutSuccessModal(data);
       } catch (err) {
         alert('CapCut Error: ' + err.message);
@@ -632,10 +639,10 @@ export function renderPreviewHtml(
       }
     }
 
-    async function triggerFfmpegRender(id) {
-      const btn = document.getElementById('btnRenderTop');
+    async function triggerFfmpegRender(id, buttonId = 'btnRenderTop') {
+      const btn = document.getElementById(buttonId);
       if (btn) {
-        btn.innerText = 'Rendering Video...';
+        btn.innerText = buttonId === 'btnFfmpegFallback' ? 'Rendering Video...' : 'Rendering Video...';
         btn.disabled = true;
       }
       try {
@@ -646,12 +653,16 @@ export function renderPreviewHtml(
         }
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Failed to render master video');
+        if (data.queued) {
+          alert('⏳ Video rendering is queued for the Windows Desktop Worker.\nJob ID: ' + (data.jobId || 'pending') + '\nThe master video is not ready yet; wait for the worker to finish and the export to sync before publishing.');
+          return;
+        }
         showRenderSuccessModal(data);
       } catch (err) {
         alert('Render Error: ' + err.message);
       } finally {
         if (btn) {
-          btn.innerText = '⚡ Render Video';
+          btn.innerText = buttonId === 'btnFfmpegFallback' ? 'Render Video with FFmpeg' : '⚡ Render Video';
           btn.disabled = false;
         }
       }
@@ -765,7 +776,7 @@ export function renderPreviewHtml(
       document.getElementById('btnCapCutTop')?.addEventListener('click', () => triggerCapCutDraft(episodeId));
       document.getElementById('btnRenderTop')?.addEventListener('click', () => triggerFfmpegRender(episodeId));
       document.getElementById('btnApproveTop')?.addEventListener('click', () => openReleaseRoom(episodeId));
-      document.getElementById('btnFfmpegFallback')?.addEventListener('click', () => triggerFfmpegRender(episodeId));
+      document.getElementById('btnFfmpegFallback')?.addEventListener('click', () => triggerFfmpegRender(episodeId, 'btnFfmpegFallback'));
 
       document.getElementById('btnPlayMaster')?.addEventListener('click', (e) => {
         const target = e.currentTarget;
@@ -799,16 +810,26 @@ export function renderPreviewHtml(
         document.getElementById('studioResultModal')?.classList.add('hidden');
       });
 
+      function activateSceneCard(card) {
+        const url = card.getAttribute('data-video-url');
+        const sceneNum = card.getAttribute('data-scene-number');
+        const title = card.getAttribute('data-title');
+        const sceneId = card.getAttribute('data-scene-id');
+        const prompt = card.getAttribute('data-prompt');
+        playScene(url, sceneNum, title, sceneId, prompt);
+      }
+
       document.addEventListener('click', (e) => {
         const card = e.target.closest('.scene-card-item');
-        if (card) {
-          const url = card.getAttribute('data-video-url');
-          const sceneNum = card.getAttribute('data-scene-number');
-          const title = card.getAttribute('data-title');
-          const sceneId = card.getAttribute('data-scene-id');
-          const prompt = card.getAttribute('data-prompt');
-          playScene(url, sceneNum, title, sceneId, prompt);
-        }
+        if (card) activateSceneCard(card);
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const card = e.target.closest('.scene-card-item');
+        if (!card) return;
+        e.preventDefault();
+        activateSceneCard(card);
       });
     });
   </script>

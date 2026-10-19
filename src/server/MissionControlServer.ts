@@ -293,7 +293,7 @@ export class MissionControlServer {
 
     // Direct YouTube Refresh Token configuration endpoint
     if (method === 'POST' && url.pathname === '/api/connections/youtube/token') {
-      const auth = this.checkAuth(req, res, 'creator');
+      const auth = this.checkAuth(req, res, 'release');
       if (!auth.authorized) return;
 
       try {
