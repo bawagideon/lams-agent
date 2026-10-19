@@ -1311,51 +1311,28 @@ export function renderDashboardHtml(
       sub.innerText = 'Draft project generated with ' + (data.tracksCount || '4') + ' tracks';
 
       const draftPath = data.draftPath || 'data/capcut_projects/...';
-      body.innerHTML = `
-        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">
-          <div class="flex items-center justify-between text-gray-500">
-            <span class="font-bold uppercase tracking-wider text-[10px]">Project Draft Location</span>
-            <button id="btnCopyDraftPath" type="button" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">
-              📋 Copy Path
-            </button>
-          </div>
-          <code id="draftPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">${draftPath}</code>
-        </div>
-        <div class="space-y-1.5 text-gray-600">
-          <p class="font-semibold text-gray-900">Next Steps in Desktop:</p>
-          <ol class="list-decimal list-inside space-y-1">
-            <li>Launch <strong>CapCut Desktop</strong> on your computer.</li>
-            <li>The project is already in your CapCut project drafts list.</li>
-            <li>Review and polish cuts, animations, audio, and subtitles.</li>
-          </ol>
-        </div>
-      `;
+      body.innerHTML = 
+        '<div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">' +
+          '<div class="flex items-center justify-between text-gray-500">' +
+            '<span class="font-bold uppercase tracking-wider text-[10px]">Project Draft Location</span>' +
+            '<button id="btnCopyDraftPath" type="button" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">📋 Copy Path</button>' +
+          '</div>' +
+          '<code id="draftPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">' + draftPath + '</code>' +
+        '</div>' +
+        '<div class="space-y-1.5 text-gray-600">' +
+          '<p class="font-semibold text-gray-900">Next Steps in Desktop:</p>' +
+          '<ol class="list-decimal list-inside space-y-1">' +
+            '<li>Launch <strong>CapCut Desktop</strong> on your computer.</li>' +
+            '<li>The project is already in your CapCut project drafts list.</li>' +
+            '<li>Review and polish cuts, animations, audio, and subtitles.</li>' +
+          '</ol>' +
+        '</div>';
 
-      actions.innerHTML = `
-        <button id="btnDismissResultModal" type="button" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
-          Close
-        </button>
-        <a href="/episodes/${episodeId}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
-          Watch & Render Video
-        </a>
-      `;
+      actions.innerHTML = 
+        '<button id="btnDismissResultModal" type="button" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">Close</button>' +
+        '<a href="/episodes/' + episodeId + '" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">Watch & Render Video</a>';
 
       modal.classList.remove('hidden');
-
-      document.getElementById('btnCopyDraftPath')?.addEventListener('click', () => {
-        navigator.clipboard.writeText(draftPath).then(() => {
-          const btn = document.getElementById('btnCopyDraftPath');
-          if (btn) btn.innerText = '✓ Copied!';
-          setTimeout(() => {
-            const b = document.getElementById('btnCopyDraftPath');
-            if (b) b.innerText = '📋 Copy Path';
-          }, 2000);
-        });
-      });
-
-      document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
-        modal.classList.add('hidden');
-      });
     }
 
     // Set default tomorrow date
@@ -1458,14 +1435,13 @@ export function renderDashboardHtml(
           const grid = document.getElementById('allEpisodesGrid');
           if (grid) grid.appendChild(emptyState);
         }
-        emptyState.innerHTML = `
-          <div class="text-3xl mb-2">🔍</div>
-          <p class="font-bold text-gray-800 text-sm">No episodes found</p>
-          <p class="text-xs text-gray-500 mt-1">No episodes match your selected status filter or search query.</p>
-          <button id="btnResetFilters" type="button" class="mt-3 text-xs bg-indigo-50 text-indigo-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition">
-            Show all episodes
-          </button>
-        `;
+        emptyState.innerHTML = 
+          '<div class="text-3xl mb-2">🔍</div>' +
+          '<p class="font-bold text-gray-800 text-sm">No episodes found</p>' +
+          '<p class="text-xs text-gray-500 mt-1">No episodes match your selected status filter or search query.</p>' +
+          '<button id="btnResetFilters" type="button" class="mt-3 text-xs bg-indigo-50 text-indigo-700 font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition">' +
+            'Show all episodes' +
+          '</button>';
         emptyState.style.display = '';
         document.getElementById('btnResetFilters')?.addEventListener('click', () => {
           if (searchInput) searchInput.value = '';

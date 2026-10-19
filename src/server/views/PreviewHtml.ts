@@ -462,34 +462,26 @@ export function renderPreviewHtml(
       sub.innerText = 'Draft project generated with ' + (data.tracksCount || '4') + ' tracks';
 
       const draftPath = data.draftPath || 'data/capcut_projects/...';
-      body.innerHTML = `
-        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">
-          <div class="flex items-center justify-between text-gray-500">
-            <span class="font-bold uppercase tracking-wider text-[10px]">Project Draft Location</span>
-            <button id="btnCopyDraftPath" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">
-              📋 Copy Path
-            </button>
-          </div>
-          <code id="draftPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">${draftPath}</code>
-        </div>
-        <div class="space-y-1.5 text-gray-600">
-          <p class="font-semibold text-gray-900">Next Steps in Desktop:</p>
-          <ol class="list-decimal list-inside space-y-1">
-            <li>Open <strong>CapCut Desktop</strong> on your computer.</li>
-            <li>The project is already in your CapCut project drafts list.</li>
-            <li>Review and polish cuts, animations, audio, and subtitles.</li>
-          </ol>
-        </div>
-      `;
+      body.innerHTML = 
+        '<div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">' +
+          '<div class="flex items-center justify-between text-gray-500">' +
+            '<span class="font-bold uppercase tracking-wider text-[10px]">Project Draft Location</span>' +
+            '<button id="btnCopyDraftPath" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">📋 Copy Path</button>' +
+          '</div>' +
+          '<code id="draftPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">' + draftPath + '</code>' +
+        '</div>' +
+        '<div class="space-y-1.5 text-gray-600">' +
+          '<p class="font-semibold text-gray-900">Next Steps in Desktop:</p>' +
+          '<ol class="list-decimal list-inside space-y-1">' +
+            '<li>Open <strong>CapCut Desktop</strong> on your computer.</li>' +
+            '<li>The project is already in your CapCut project drafts list.</li>' +
+            '<li>Review and polish cuts, animations, audio, and subtitles.</li>' +
+          '</ol>' +
+        '</div>';
 
-      actions.innerHTML = `
-        <button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
-          Close
-        </button>
-        <button id="btnTriggerRenderFromCapcut" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
-          ⚡ Render Video Now
-        </button>
-      `;
+      actions.innerHTML = 
+        '<button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">Close</button>' +
+        '<button id="btnTriggerRenderFromCapcut" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">⚡ Render Video Now</button>';
 
       modal.classList.remove('hidden');
 
@@ -525,29 +517,19 @@ export function renderPreviewHtml(
       sub.innerText = 'FFmpeg render pipeline completed successfully';
 
       const outPath = data.outputPath || 'data/renders/...';
-      body.innerHTML = `
-        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">
-          <div class="flex items-center justify-between text-gray-500">
-            <span class="font-bold uppercase tracking-wider text-[10px]">Rendered Output File</span>
-            <button id="btnCopyRenderPath" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">
-              📋 Copy Path
-            </button>
-          </div>
-          <code id="renderPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">${outPath}</code>
-        </div>
-        <p class="text-gray-600">
-          Your master video has been rendered and saved. You can preview it in the player or proceed to the Safe-Mode Release Room.
-        </p>
-      `;
+      body.innerHTML = 
+        '<div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-2">' +
+          '<div class="flex items-center justify-between text-gray-500">' +
+            '<span class="font-bold uppercase tracking-wider text-[10px]">Rendered Output File</span>' +
+            '<button id="btnCopyRenderPath" class="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold flex items-center gap-1">📋 Copy Path</button>' +
+          '</div>' +
+          '<code id="renderPathCode" class="block bg-white border border-gray-200 rounded-lg p-2 font-mono text-[11px] text-gray-800 break-all select-all">' + outPath + '</code>' +
+        '</div>' +
+        '<p class="text-gray-600">Your master video has been rendered and saved. You can preview it in the player or proceed to the Safe-Mode Release Room.</p>';
 
-      actions.innerHTML = `
-        <button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
-          Close
-        </button>
-        <button id="btnOpenReleaseAfterRender" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
-          🚀 Open Release Room
-        </button>
-      `;
+      actions.innerHTML = 
+        '<button id="btnDismissResultModal" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">Close</button>' +
+        '<button id="btnOpenReleaseAfterRender" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">🚀 Open Release Room</button>';
 
       modal.classList.remove('hidden');
 
