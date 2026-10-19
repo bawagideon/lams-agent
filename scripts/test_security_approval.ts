@@ -215,6 +215,40 @@ async function runApprovalTests() {
       }
     });
 
+    // 9. State Machine Reconcile: Proposal in APPROVED status transitions cleanly to CONSUMED
+    await test('State Machine Reconcile: Proposal in APPROVED status transitions cleanly to CONSUMED', async () => {
+      fs.writeFileSync(testVideoPath, initialContent);
+      const { proposal, approvalToken } = await approvalManager.createReleaseProposal({
+        episodeId: 'ep-state-machine-approved',
+        title: 'Approved Status Transition Check',
+        videoFilePath: testVideoPath,
+        destinationChannelId: 'UC_REAL_CHANNEL_ID',
+        destinationChannelTitle: 'Lams Channel',
+        approvedByUserId: 'creator-lams',
+      });
+
+      // Transition proposal status to APPROVED (simulating multi-step human review approval)
+      proposal.status = 'APPROVED';
+
+      const result = await approvalManager.validateAndConsumeApproval(
+        approvalToken,
+        'ep-state-machine-approved',
+        testVideoPath
+      );
+
+      assert.strictEqual(result.valid, true, `Expected successful consumption of APPROVED proposal, got: ${result.error}`);
+      assert.strictEqual(result.proposal?.status, 'CONSUMED', 'Proposal status must be updated to CONSUMED');
+      assert.ok(result.proposal?.consumedAt, 'Consumed timestamp must be recorded');
+
+      // Replay attempt must be rejected
+      const replayResult = await approvalManager.validateAndConsumeApproval(
+        approvalToken,
+        'ep-state-machine-approved',
+        testVideoPath
+      );
+      assert.strictEqual(replayResult.valid, false, 'Replay attempt on previously CONSUMED proposal must be rejected');
+    });
+
   } finally {
     if (fs.existsSync(testVideoPath)) {
       try { fs.unlinkSync(testVideoPath); } catch {}

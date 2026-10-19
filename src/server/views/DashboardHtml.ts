@@ -1296,25 +1296,36 @@ export function renderDashboardHtml(
         const res = await fetch('/api/episodes/' + epId + '/release-check');
         const check = await res.json();
 
-        document.getElementById('releaseEpisodeTitle').innerText = 'Release Room: ' + check.title;
+        document.getElementById('releaseEpisodeTitle').innerText = 'Release Room: ' + (check.title || '');
 
         let html = '';
         // Scenes
         html += '<div class="flex items-center justify-between">';
         html += '<span class="flex items-center gap-2">' + (check.allScenesReady ? '✅' : '⚠️') + ' <span>All Scenes Rendered</span></span>';
-        html += '<span class="font-mono text-gray-500">' + check.completedScenesCount + ' / ' + check.scenesCount + '</span>';
+        html += '<span class="font-mono text-gray-500">' + Number(check.completedScenesCount || 0) + ' / ' + Number(check.scenesCount || 0) + '</span>';
         html += '</div>';
 
         // Master Video
         html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
         html += '<span class="flex items-center gap-2">' + (check.masterVideo ? '✅' : '❌') + ' <span>Master Video Export</span></span>';
-        html += '<span class="font-mono text-gray-500">' + (check.masterVideo ? check.masterVideo.fileName + ' (' + check.masterVideo.sizeMb + 'MB)' : 'Missing in watched_exports/') + '</span>';
+        const masterVideoText = check.masterVideo
+          ? clientEscapeHtml(check.masterVideo.fileName) + ' (' + clientEscapeHtml(check.masterVideo.sizeMb) + 'MB)'
+          : 'Missing in watched_exports/';
+        html += '<span class="font-mono text-gray-500">' + masterVideoText + '</span>';
         html += '</div>';
 
         // YouTube OAuth
         html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
-        html += '<span class="flex items-center gap-2">' + (check.youtube.connected ? '✅' : '❌') + ' <span>YouTube Account Connected</span></span>';
-        html += '<span class="font-mono text-gray-500">' + (check.youtube.connected ? check.youtube.channelTitle : '<a href="' + check.youtube.authUrl + '" class="text-indigo-600 font-bold underline">Link Account</a>') + '</span>';
+        html += '<span class="flex items-center gap-2">' + (check.youtube && check.youtube.connected ? '✅' : '❌') + ' <span>YouTube Account Connected</span></span>';
+        let ytStatusHtml = '';
+        if (check.youtube && check.youtube.connected) {
+          ytStatusHtml = clientEscapeHtml(check.youtube.channelTitle);
+        } else if (check.youtube && check.youtube.authUrl && /^https?:\/\//i.test(check.youtube.authUrl)) {
+          ytStatusHtml = '<a href="' + clientEscapeHtml(check.youtube.authUrl) + '" class="text-indigo-600 font-bold underline" rel="noopener noreferrer">Link Account</a>';
+        } else {
+          ytStatusHtml = '<span class="text-gray-400">Not Linked</span>';
+        }
+        html += '<span class="font-mono text-gray-500">' + ytStatusHtml + '</span>';
         html += '</div>';
 
         // Privacy
@@ -1337,18 +1348,18 @@ export function renderDashboardHtml(
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
             msg.className = 'bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded-xl text-xs';
-            msg.innerHTML = '<strong>Proposal creation failed:</strong> ' + (propData.error || 'Unknown error');
+            msg.innerHTML = '<strong>Proposal creation failed:</strong> ' + clientEscapeHtml(propData.error || 'Unknown error');
             msg.classList.remove('hidden');
           }
         } else {
           btn.disabled = true;
           btn.classList.add('opacity-50', 'cursor-not-allowed');
           msg.className = 'bg-amber-50 text-amber-900 border border-amber-200 p-3 rounded-xl text-xs';
-          msg.innerHTML = '<strong>Prerequisites not met:</strong> ' + check.reasons.join(', ');
+          msg.innerHTML = '<strong>Prerequisites not met:</strong> ' + clientEscapeHtml((check.reasons || []).join(', '));
           msg.classList.remove('hidden');
         }
       } catch (err) {
-        list.innerHTML = '<div class="text-red-500">Error loading preflight checklist: ' + err.message + '</div>';
+        list.innerHTML = '<div class="text-red-500">Error loading preflight checklist: ' + clientEscapeHtml(err.message) + '</div>';
       }
     }
 

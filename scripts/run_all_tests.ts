@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { PlaywrightBrowserAdapter } from '../src/adapters/browser/PlaywrightBrowserAdapter.ts';
 
 interface SuiteResult {
@@ -107,6 +108,44 @@ async function runAllTests() {
     console.log(` [${idx + 1}] ${icon} ${r.name.padEnd(52)} ${r.durationMs}ms (exit ${r.exitCode})`);
   });
   console.log('================================================================\n');
+
+  // Persist machine-verifiable audit summary receipt bound to exact git commit SHA & diagnostics
+  const auditReceipt = {
+    receiptId: `audit_${Date.now()}`,
+    generatedAt: new Date().toISOString(),
+    gitCommit,
+    gitBranch,
+    isWorkingTreeClean,
+    isPostTreeClean,
+    environment: {
+      nodeVersion,
+      platform,
+      browserEngine: browserCheck.ready ? browserCheck.channel : `FAILED: ${browserCheck.error}`,
+    },
+    totalDurationMs: totalDuration,
+    allPassed,
+    suites: results.map(r => ({
+      name: r.name,
+      file: r.file,
+      passed: r.passed,
+      exitCode: r.exitCode,
+      durationMs: r.durationMs,
+    })),
+    sha256: crypto.createHash('sha256').update(JSON.stringify({
+      gitCommit,
+      allPassed,
+      suites: results.map(r => ({ name: r.name, exitCode: r.exitCode })),
+    })).digest('hex'),
+  };
+
+  const receiptPath = path.resolve('data', 'audit_summary_receipt.json');
+  try {
+    fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
+    fs.writeFileSync(receiptPath, JSON.stringify(auditReceipt, null, 2), 'utf-8');
+    console.log(`✓ Audit summary receipt persisted: ${receiptPath}\n`);
+  } catch (err: any) {
+    console.warn(`⚠ Warning: Could not persist audit summary receipt: ${err.message}`);
+  }
 
   if (!allPassed) {
     process.exit(1);

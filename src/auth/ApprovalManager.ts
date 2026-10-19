@@ -339,7 +339,7 @@ export class ApprovalManager {
             return { valid: false, error: 'Release denied: Approval proposal has already been consumed (replay rejected).' };
           }
           if (dbRows[0].status !== 'PENDING' && dbRows[0].status !== 'APPROVED') {
-            return { valid: false, error: `Release denied: Database proposal is in state '${dbRows[0].status}', expected 'PENDING'.` };
+            return { valid: false, error: `Release denied: Database proposal is in state '${dbRows[0].status}', expected 'PENDING' or 'APPROVED'.` };
           }
         }
       } catch (dbCheckErr: any) {
@@ -364,7 +364,7 @@ export class ApprovalManager {
     }
 
     // 2. Check replay attack
-    if (proposal.status !== 'PENDING') {
+    if (proposal.status !== 'PENDING' && proposal.status !== 'APPROVED') {
       return {
         valid: false,
         error: `Release denied: Approval proposal has already been ${proposal.status.toLowerCase()} (replay rejected).`,
@@ -413,7 +413,7 @@ export class ApprovalManager {
             consumed_at: new Date().toISOString(),
           })
           .eq('id', proposalId)
-          .eq('status', 'PENDING')
+          .in('status', ['PENDING', 'APPROVED'])
           .select();
 
         const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;

@@ -30,8 +30,34 @@ export interface EvidenceReceipt {
 }
 
 /**
+ * Recursively canonicalizes any JS value:
+ * - Objects have keys sorted lexicographically at all nesting depths
+ * - Arrays preserve element order with each element recursively canonicalized
+ * - Primitives and null are returned as-is
+ * - Undefined values in objects are omitted to preserve deterministic JSON
+ */
+export function canonicalizeValue(val: any): any {
+  if (val === null || typeof val !== 'object') {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => canonicalizeValue(item));
+  }
+  const sortedKeys = Object.keys(val).sort();
+  const result: Record<string, any> = {};
+  for (const key of sortedKeys) {
+    const v = val[key];
+    if (v !== undefined) {
+      result[key] = canonicalizeValue(v);
+    }
+  }
+  return result;
+}
+
+/**
  * Deterministically canonicalizes evidence receipt payload for cryptographic signing.
- * All keys are sorted alphabetically and nested objects/arrays are normalized.
+ * Recursively sorts all keys alphabetically at every nesting level so that nested
+ * structures (steps, proofData, etc.) cannot be tampered with or omitted.
  */
 export function canonicalizeReceiptPayload(receipt: Omit<EvidenceReceipt, 'signature'> | EvidenceReceipt): string {
   const canonicalObj: Record<string, any> = {
@@ -59,7 +85,8 @@ export function canonicalizeReceiptPayload(receipt: Omit<EvidenceReceipt, 'signa
     totalDurationMs: receipt.totalDurationMs,
   };
 
-  return JSON.stringify(canonicalObj, Object.keys(canonicalObj).sort());
+  const normalized = canonicalizeValue(canonicalObj);
+  return JSON.stringify(normalized);
 }
 
 /**
@@ -90,39 +117,54 @@ export function signEvidenceReceipt(
 /**
  * Cryptographically verifies an evidence receipt's HMAC-SHA256 signature.
  * Prevents tampering, forgery, or fabrication of success claims.
+ * Fails closed gracefully on any malformed payload or signature.
  */
 export function verifyEvidenceReceipt(
   receipt: any,
   secretKey?: string
 ): { valid: boolean; error?: string } {
-  if (!receipt || typeof receipt !== 'object') {
-    return { valid: false, error: 'Evidence receipt is missing or not an object.' };
-  }
+  try {
+    if (!receipt || typeof receipt !== 'object') {
+      return { valid: false, error: 'Evidence receipt is missing or not an object.' };
+    }
 
-  if (!receipt.signature || typeof receipt.signature !== 'string') {
-    return { valid: false, error: 'Evidence receipt is missing required HMAC signature.' };
-  }
+    if (!receipt.signature || typeof receipt.signature !== 'string') {
+      return { valid: false, error: 'Evidence receipt is missing required HMAC signature.' };
+    }
 
-  if (!receipt.receiptId || !receipt.skillId || !receipt.skillVersion || !receipt.status) {
-    return { valid: false, error: 'Evidence receipt is missing mandatory metadata fields.' };
-  }
+    if (!/^[0-9a-f]{64}$/i.test(receipt.signature)) {
+      return { valid: false, error: 'Evidence receipt HMAC signature format is invalid (expected 64-char hex).' };
+    }
 
-  const secret = secretKey || AuthManager.getInstance().getSecret();
-  const expectedCanonical = canonicalizeReceiptPayload(receipt);
-  const expectedSig = crypto.createHmac('sha256', secret).update(expectedCanonical).digest('hex');
+    if (!receipt.receiptId || !receipt.skillId || !receipt.skillVersion || !receipt.status) {
+      return { valid: false, error: 'Evidence receipt is missing mandatory metadata fields.' };
+    }
 
-  const providedSig = receipt.signature;
-  if (
-    providedSig.length !== expectedSig.length ||
-    !crypto.timingSafeEqual(Buffer.from(providedSig, 'hex'), Buffer.from(expectedSig, 'hex'))
-  ) {
+    const secret = secretKey || AuthManager.getInstance().getSecret();
+    const expectedCanonical = canonicalizeReceiptPayload(receipt);
+    const expectedSig = crypto.createHmac('sha256', secret).update(expectedCanonical).digest('hex');
+
+    const providedSig = receipt.signature;
+    const providedBuf = Buffer.from(providedSig, 'hex');
+    const expectedBuf = Buffer.from(expectedSig, 'hex');
+
+    if (
+      providedBuf.length !== expectedBuf.length ||
+      !crypto.timingSafeEqual(providedBuf, expectedBuf)
+    ) {
+      return {
+        valid: false,
+        error: 'Evidence receipt HMAC signature is invalid, forged, or payload was tampered.',
+      };
+    }
+
+    return { valid: true };
+  } catch (err: any) {
     return {
       valid: false,
-      error: 'Evidence receipt HMAC signature is invalid, forged, or payload was tampered.',
+      error: `Evidence receipt verification failed closed: ${err?.message || 'Malformed payload or signature.'}`,
     };
   }
-
-  return { valid: true };
 }
 
 export function generateEvidenceReceipt(

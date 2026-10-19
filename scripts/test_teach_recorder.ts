@@ -9,7 +9,7 @@ import { SkillRunner } from '../src/skills/SkillRunner.ts';
 import { AuthManager } from '../src/auth/AuthManager.ts';
 import { ApprovalManager } from '../src/auth/ApprovalManager.ts';
 import { computeSkillPlanHash } from '../src/contracts/SkillContract.ts';
-import { signEvidenceReceipt } from '../src/contracts/EvidenceReceipt.ts';
+import { signEvidenceReceipt, verifyEvidenceReceipt, canonicalizeReceiptPayload, canonicalizeValue } from '../src/contracts/EvidenceReceipt.ts';
 import { PlaywrightBrowserAdapter } from '../src/adapters/browser/PlaywrightBrowserAdapter.ts';
 
 const BASE_URL = 'http://127.0.0.1:4200';
@@ -797,6 +797,239 @@ async function runTeachRecorderTests() {
     if (fs.existsSync(recFile2)) {
       try { fs.unlinkSync(recFile2); } catch {}
     }
+  });
+
+  // Test 20: Recursive HMAC Canonicalization: Key Insertion Order Invariance & Complete Nested Preservation
+  await test('Cryptographic Integrity: Recursive canonicalization preserves nested keys and is order-invariant', async () => {
+    // 20a: Nested key preservation - steps and proofData must not lose properties
+    const samplePayload = {
+      receiptId: 'rcpt_test_canon_1',
+      missionId: 'mission_canon',
+      skillId: 'skill_canon',
+      skillVersion: '1.0.0',
+      status: 'SUCCESS' as const,
+      startedAt: '2026-10-19T12:00:00.000Z',
+      completedAt: '2026-10-19T12:00:01.000Z',
+      totalDurationMs: 1000,
+      executedBy: 'Test Agent',
+      steps: [
+        {
+          step: 1,
+          name: 'Step One',
+          action: 'browser.navigate',
+          durationMs: 400,
+          status: 'PASS' as const,
+          detail: 'Navigated to target URL',
+        },
+      ],
+      proofData: {
+        planHash: 'hash_abc_123',
+        verificationProof: {
+          domChecked: true,
+          elementText: 'Success Element',
+        },
+      },
+    };
+
+    const canonicalStr = canonicalizeReceiptPayload(samplePayload);
+    const parsedBack = JSON.parse(canonicalStr);
+
+    // Assert that nested properties are preserved (not dropped by top-level replacer arrays)
+    assert.strictEqual(parsedBack.steps[0].action, 'browser.navigate', 'Step action must be preserved in canonical string');
+    assert.strictEqual(parsedBack.steps[0].detail, 'Navigated to target URL', 'Step detail must be preserved');
+    assert.strictEqual(parsedBack.steps[0].durationMs, 400, 'Step durationMs must be preserved');
+    assert.strictEqual(parsedBack.proofData.verificationProof.domChecked, true, 'Nested proofData property must be preserved');
+
+    // 20b: Key insertion order invariance
+    // Object with scrambled key insertion order
+    const scrambledPayload = {
+      totalDurationMs: 1000,
+      status: 'SUCCESS' as const,
+      startedAt: '2026-10-19T12:00:00.000Z',
+      skillVersion: '1.0.0',
+      skillId: 'skill_canon',
+      receiptId: 'rcpt_test_canon_1',
+      proofData: {
+        verificationProof: {
+          elementText: 'Success Element',
+          domChecked: true,
+        },
+        planHash: 'hash_abc_123',
+      },
+      steps: [
+        {
+          detail: 'Navigated to target URL',
+          status: 'PASS' as const,
+          name: 'Step One',
+          durationMs: 400,
+          action: 'browser.navigate',
+          step: 1,
+        },
+      ],
+      missionId: 'mission_canon',
+      executedBy: 'Test Agent',
+      completedAt: '2026-10-19T12:00:01.000Z',
+    };
+
+    const scrambledCanonicalStr = canonicalizeReceiptPayload(scrambledPayload);
+    assert.strictEqual(
+      canonicalStr,
+      scrambledCanonicalStr,
+      'Cryptographic canonical string must be completely invariant to key insertion order'
+    );
+  });
+
+  // Test 21: Tamper Resistance: Independent nested mutations strictly invalidate HMAC signatures
+  await test('Cryptographic Integrity: Tampering with nested step actions, statuses, or proofs invalidates HMAC', async () => {
+    const rawReceipt = {
+      receiptId: 'rcpt_tamper_test',
+      missionId: 'mission_tamper',
+      skillId: 'test_skill_tamper',
+      skillVersion: '1.0.0',
+      status: 'SUCCESS' as const,
+      startedAt: new Date(Date.now() - 5000).toISOString(),
+      completedAt: new Date().toISOString(),
+      totalDurationMs: 5000,
+      executedBy: 'Test Runner',
+      steps: [
+        {
+          step: 1,
+          name: 'Legitimate Step',
+          action: 'browser.navigate',
+          durationMs: 500,
+          status: 'PASS' as const,
+          detail: 'Step 1 success',
+        },
+      ],
+      proofData: {
+        planHash: 'original_legit_plan_hash',
+      },
+    };
+
+    const signedReceipt = signEvidenceReceipt(rawReceipt);
+    const initialCheck = verifyEvidenceReceipt(signedReceipt);
+    assert.strictEqual(initialCheck.valid, true, 'Original signed receipt must be cryptographically valid');
+
+    // 21a: Tamper with step[0].action -> must fail signature check
+    const tamperedActionReceipt = JSON.parse(JSON.stringify(signedReceipt));
+    tamperedActionReceipt.steps[0].action = 'malicious.unauthorized_action';
+    const actionCheck = verifyEvidenceReceipt(tamperedActionReceipt);
+    assert.strictEqual(actionCheck.valid, false, 'Tampered step action must invalidate HMAC signature');
+    assert.ok(actionCheck.error?.includes('tampered'), 'Error must report tampering or signature invalidation');
+
+    // 21b: Tamper with step[0].status -> must fail signature check
+    const tamperedStatusReceipt = JSON.parse(JSON.stringify(signedReceipt));
+    tamperedStatusReceipt.steps[0].status = 'FAIL';
+    const statusCheck = verifyEvidenceReceipt(tamperedStatusReceipt);
+    assert.strictEqual(statusCheck.valid, false, 'Tampered step status must invalidate HMAC signature');
+
+    // 21c: Tamper with nested proofData.planHash -> must fail signature check
+    const tamperedProofReceipt = JSON.parse(JSON.stringify(signedReceipt));
+    tamperedProofReceipt.proofData.planHash = 'forged_fake_hash';
+    const proofCheck = verifyEvidenceReceipt(tamperedProofReceipt);
+    assert.strictEqual(proofCheck.valid, false, 'Tampered proofData must invalidate HMAC signature');
+
+    // 21d: Malformed signature format fails closed gracefully without uncaught exceptions
+    const malformedSigReceipt = { ...signedReceipt, signature: 'not-a-valid-hex-sig!!!' };
+    const malformedCheck = verifyEvidenceReceipt(malformedSigReceipt);
+    assert.strictEqual(malformedCheck.valid, false, 'Malformed signature must fail closed');
+    assert.ok(malformedCheck.error?.includes('invalid'), 'Error must specify invalid format');
+
+    // 21e: Empty or non-object receipt fails closed gracefully
+    assert.strictEqual(verifyEvidenceReceipt(null).valid, false);
+    assert.strictEqual(verifyEvidenceReceipt({}).valid, false);
+  });
+
+  // Test 22: Screen-State Postcondition Strictness: Rejection of false claims without explicit DOM assertions
+  await test('SkillRunner: target_screen_state_matches_final_demonstration requires explicit DOM locator assertion', async () => {
+    const runner = new SkillRunner();
+
+    // 22a: Skill without explicit DOM assertion step and without targetSelector MUST fail closed
+    const unassertedSkill = {
+      schemaVersion: '1.0',
+      id: 'test_unasserted_screen_state',
+      name: 'Unasserted Screen State Skill',
+      version: '1.0.0',
+      description: 'Skill claiming screen state matches without verifying any DOM element',
+      executionMode: 'browser_agent' as const,
+      inputs: {},
+      preconditions: [],
+      approvalGate: { required: false, level: '0_autonomous' as const, prompt: '' },
+      actions: [
+        {
+          step: 1,
+          name: 'Navigate to Example Domain',
+          action: 'browser.navigate',
+          parameters: { target: 'https://example.com' },
+        },
+      ],
+      verification: {
+        postconditions: ['target_screen_state_matches_final_demonstration'],
+        proofRequired: true,
+      },
+      failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
+    };
+
+    const unassertedResult = await runner.execute({
+      missionId: 'mission-unasserted-screen',
+      skill: unassertedSkill,
+      params: {},
+      isApprovedByHuman: true,
+    });
+
+    assert.strictEqual(unassertedResult.outputData.status, 'FAILED', 'Skill must fail closed when claiming screen state without DOM assertion');
+    assert.strictEqual(unassertedResult.receipt.status, 'FAILED');
+    assert.ok(
+      unassertedResult.outputData.error?.includes('explicit target DOM locator assertion') ||
+      unassertedResult.receipt.verificationProof?.error?.includes('explicit target DOM locator assertion'),
+      `Unexpected error: ${JSON.stringify(unassertedResult.outputData)}`
+    );
+
+    // 22b: Skill WITH an explicit DOM assertion step (action.verify) that passes MUST succeed
+    const assertedSkill = {
+      schemaVersion: '1.0',
+      id: 'test_asserted_screen_state',
+      name: 'Asserted Screen State Skill',
+      version: '1.0.0',
+      description: 'Skill with real DOM locator verification',
+      executionMode: 'browser_agent' as const,
+      inputs: {},
+      preconditions: [],
+      approvalGate: { required: false, level: '0_autonomous' as const, prompt: '' },
+      actions: [
+        {
+          step: 1,
+          name: 'Navigate to Example Domain',
+          action: 'browser.navigate',
+          parameters: { target: 'https://example.com' },
+        },
+        {
+          step: 2,
+          name: 'Verify Learn More Link Visible',
+          action: 'action.verify',
+          parameters: { selector: 'a', expectedText: 'Learn more' },
+        },
+      ],
+      verification: {
+        postconditions: ['target_screen_state_matches_final_demonstration'],
+        proofRequired: true,
+      },
+      failureRecovery: { maxRetries: 0, alertLevel: 'low' as const },
+    };
+
+    const assertedResult = await runner.execute({
+      missionId: 'mission-asserted-screen',
+      skill: assertedSkill,
+      params: {},
+      isApprovedByHuman: true,
+    });
+
+    assert.strictEqual(assertedResult.outputData.status, undefined, 'Asserted execution should succeed without failure error');
+    assert.strictEqual(assertedResult.receipt.status, 'SUCCESS', 'Receipt status must be SUCCESS');
+    assert.ok(
+      assertedResult.receipt.passedPostconditions?.includes('target_screen_state_matches_final_demonstration'),
+      'Receipt must record verified screen state postcondition'
+    );
   });
 
     if (originalGlobalCustomSkills !== null) {

@@ -266,6 +266,7 @@ export class SkillRunner {
           }
           verifiedPostconditions.push(condition);
         } else if (condition === 'target_screen_state_matches_final_demonstration') {
+          // 1. Ensure no previous replay steps failed
           if (stepsEvidence.some(s => s.status === 'FAIL')) {
             const failedReceipt = generateEvidenceReceipt(
               missionId,
@@ -283,7 +284,60 @@ export class SkillRunner {
               outputData: { status: 'FAILED', error: 'Demonstration replay postcondition failed.' },
             };
           }
-          verifiedPostconditions.push(condition);
+
+          // 2. Strict DOM state verification: An explicit target locator assertion is strictly required
+          const targetSelector = params.targetSelector || params.finalSelector || (skill.verification as any)?.targetSelector;
+          const hasVerifiedDomAssertionStep = stepsEvidence.some(
+            s => s.action === 'action.verify' && s.status === 'PASS'
+          ) && outputData['action.verify']?.verified === true;
+
+          if (targetSelector) {
+            try {
+              await this.browserAdapter.verify('Final demonstration screen state verification', targetSelector);
+              verifiedPostconditions.push(condition);
+            } catch (err: any) {
+              const failedReceipt = generateEvidenceReceipt(
+                missionId,
+                skill.id,
+                skill.version,
+                `Agent Executor (${skill.name})`,
+                'FAILED',
+                startedAt,
+                stepsEvidence,
+                { error: `Postcondition failed: Final screen state assertion for selector '${targetSelector}' failed: ${err.message}` }
+              );
+              this.saveReceipt(failedReceipt);
+              return {
+                receipt: failedReceipt,
+                outputData: { status: 'FAILED', error: `Final screen state assertion failed: ${err.message}` },
+              };
+            }
+          } else if (hasVerifiedDomAssertionStep) {
+            // An explicit action.verify step was executed and confirmed on the DOM during execution
+            verifiedPostconditions.push(condition);
+          } else {
+            // No explicit DOM assertion or target locator provided: FAIL CLOSED
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              {
+                error: "Postcondition failed: 'target_screen_state_matches_final_demonstration' requires an explicit target element/DOM locator assertion or a verified 'action.verify' step.",
+              }
+            );
+            this.saveReceipt(failedReceipt);
+            return {
+              receipt: failedReceipt,
+              outputData: {
+                status: 'FAILED',
+                error: "Postcondition failed: Missing explicit target DOM locator assertion for final screen state.",
+              },
+            };
+          }
         } else {
           // Strict verifier registry: UNKNOWN / UNSUPPORTED POSTCONDITION FAILS CLOSED
           const failedReceipt = generateEvidenceReceipt(
