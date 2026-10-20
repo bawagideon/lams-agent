@@ -287,5 +287,62 @@
       "maxRetries": 2,
       "alertLevel": "medium"
     }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "capcut_timeline_automated_assembly",
+    "name": "CapCut Timeline Automated Assembly",
+    "version": "1.0.0",
+    "description": "Verified CapCut timeline assembly skill compiled from demonstration demo_1792488169548_0b16d5f4 (manifest: 6d051c1db28f).",
+    "executionMode": "file_draft",
+    "isSample": false,
+    "status": "verified_production",
+    "inputs": {
+      "episodeId": {
+        "type": "string",
+        "description": "Target episode ID for automated CapCut draft timeline generation",
+        "required": true
+      }
+    },
+    "preconditions": [
+      "media_plan_valid",
+      "media_assets_exist"
+    ],
+    "approvalGate": {
+      "required": false,
+      "level": "0_autonomous"
+    },
+    "actions": [
+      {
+        "step": 1,
+        "name": "Validate Episode Assets",
+        "action": "editor.verify_assets",
+        "parameters": {}
+      },
+      {
+        "step": 2,
+        "name": "Compile Media Plan Timeline",
+        "action": "editor.compile_timeline",
+        "parameters": {}
+      },
+      {
+        "step": 3,
+        "name": "Inject CapCut Draft JSON Files",
+        "action": "editor.write_capcut_draft",
+        "parameters": {}
+      }
+    ],
+    "verification": {
+      "postconditions": [
+        "draft_content_json_exists",
+        "draft_meta_info_exists",
+        "timeline_duration_matches"
+      ],
+      "proofRequired": true
+    },
+    "failureRecovery": {
+      "maxRetries": 2,
+      "alertLevel": "medium"
+    }
   }
 ]

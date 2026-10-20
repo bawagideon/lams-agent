@@ -116,11 +116,15 @@ export class YTEngineBridge {
       throw new Error(`Episode ${episodeId} not found in database.`);
     }
 
-    const { data: scenes } = await this.supabase
+    const { data: scenes, error: scenesErr } = await this.supabase
       .from('scenes')
-      .select('id, scene_number, status, duration, visual_prompt, motion_prompt, video_url')
+      .select('id, scene_number, status, duration, title, voiceover, image_prompt, motion_prompt, video_url')
       .eq('episode_id', episodeId)
       .order('scene_number', { ascending: true });
+
+    if (scenesErr) {
+      throw new Error(`Failed to fetch scenes for episode ${episodeId}: ${scenesErr.message}`);
+    }
 
     let currentTimelineOffset = 0;
     const visuals: MediaPlan['tracks']['visuals'] = [];
@@ -141,7 +145,7 @@ export class YTEngineBridge {
         volume: 1.0,
       });
 
-      let dialogText = scene.visual_prompt || '';
+      let dialogText = scene.voiceover || scene.title || scene.image_prompt || '';
       if (scene.motion_prompt) {
         const dialogMatch = scene.motion_prompt.match(/([A-Za-z\s]+:\s*“[^”]+”)/);
         if (dialogMatch) dialogText = dialogMatch[1];

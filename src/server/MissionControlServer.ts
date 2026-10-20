@@ -21,6 +21,7 @@ import { DurableJobQueue } from '../jobs/DurableJobQueue.ts';
 import { renderDashboardHtml } from './views/DashboardHtml.ts';
 import { renderPreviewHtml } from './views/PreviewHtml.ts';
 import { escapeHtml } from './utils/htmlEscape.ts';
+import { explainControl } from '../config/FeatureRegistry.ts';
 
 export class MissionControlServer {
   private server: http.Server;
@@ -924,7 +925,71 @@ export class MissionControlServer {
         let reply = '';
         let planCard: any = null;
 
-        if (/release|schedule|publish|approve/i.test(clean)) {
+        const isRunRequest = /run|execute|assemble|start|build/i.test(clean);
+        const isExplainRequest = /what does|what is|how does|explain|help with/i.test(clean);
+
+        if (isExplainRequest) {
+          const queryTerm = clean
+            .replace(/what does|what is|how does|explain|help with|the|button|control|feature|do|\?/gi, ' ')
+            .trim();
+          const explanation = explainControl(queryTerm) || explainControl(clean);
+          if (explanation) {
+            reply = `Here is how that works:<br/><br/>${explanation}`;
+          } else {
+            reply = `I couldn't find an exact control matching "<strong>${escapeHtml(queryTerm || clean)}</strong>". You can ask about any button on your dashboard like <em>"What does Assemble CapCut do?"</em> or <em>"What is Release Room?"</em>.`;
+          }
+        } else if (isRunRequest && (/capcut|draft|timeline/i.test(clean) || /skill/i.test(clean))) {
+          // Identify target skill
+          let targetSkill = this.skillRegistry.getSkill('capcut_assembly');
+          const skillList = this.skillRegistry.listSkills();
+          for (const s of skillList) {
+            if (clean.includes(s.id.toLowerCase()) || clean.includes(s.name.toLowerCase())) {
+              targetSkill = s;
+              break;
+            }
+          }
+
+          const targetEp = episodes.find(e => clean.includes(e.title.toLowerCase())) || episodes.find(e => e.status === 'Review') || episodes[0];
+          if (!targetEp) {
+            reply = `I couldn't identify which episode to run the skill for. Please specify an episode title.`;
+          } else if (!targetSkill) {
+            reply = `I couldn't find a skill matching your request.`;
+          } else {
+            const missionId = `mission_chat_${Date.now()}`;
+            const result = await this.skillRunner.execute({
+              missionId,
+              skill: targetSkill,
+              params: { episodeId: targetEp.id, title: targetEp.title },
+              isApprovedByHuman: true,
+            });
+
+            if (result.receipt.status === 'SUCCESS') {
+              const draftOut = result.outputData['editor.write_capcut_draft'];
+              reply = `✅ Executed skill <strong>${escapeHtml(targetSkill.name)}</strong> for <strong>${escapeHtml(targetEp.title)}</strong>! Project files are ready on disk.`;
+              planCard = {
+                type: 'skill_execution_receipt',
+                receiptId: result.receipt.receiptId,
+                skillId: targetSkill.id,
+                skillName: targetSkill.name,
+                status: 'SUCCESS',
+                episodeId: targetEp.id,
+                draftPath: draftOut?.draftPath,
+                tracksCount: draftOut?.tracksCount,
+                durationSeconds: draftOut?.durationSeconds,
+                securitySignature: result.receipt.evidenceHmac ? result.receipt.evidenceHmac.substring(0, 16) + '...' : undefined,
+              };
+            } else {
+              reply = `❌ Skill execution failed for <strong>${escapeHtml(targetSkill.name)}</strong>: ${escapeHtml(result.outputData.error || 'Execution check failed.')}`;
+              planCard = {
+                type: 'skill_execution_receipt',
+                receiptId: result.receipt.receiptId,
+                skillId: targetSkill.id,
+                status: 'FAILED',
+                error: result.outputData.error,
+              };
+            }
+          }
+        } else if (/release|schedule|publish|approve/i.test(clean)) {
           const targetEp = episodes.find(e => clean.includes(e.title.toLowerCase())) || episodes.find(e => e.status === 'Review') || episodes[0];
           if (targetEp) {
             const exported = this.exportWatcher.findExportForEpisode(targetEp.id, targetEp.title);

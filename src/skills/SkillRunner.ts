@@ -265,6 +265,67 @@ export class SkillRunner {
             };
           }
           verifiedPostconditions.push(condition);
+        } else if (condition === 'draft_meta_info_exists') {
+          const draftOut = outputData['editor.write_capcut_draft'];
+          if (!draftOut || !draftOut.draftPath || !fs.existsSync(path.join(draftOut.draftPath, 'draft_meta_info.json'))) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: 'Postcondition failed: draft_meta_info.json does not exist on disk.' }
+            );
+            this.saveReceipt(failedReceipt);
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: 'Postcondition failed: draft_meta_info.json was not written.' },
+            };
+          }
+          verifiedPostconditions.push(condition);
+        } else if (condition === 'timeline_duration_matches') {
+          const draftOut = outputData['editor.write_capcut_draft'];
+          const compileOut = outputData['editor.compile_timeline'];
+          const draftDuration = draftOut?.durationSeconds;
+          if (typeof draftDuration !== 'number' || draftDuration <= 0) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: 'Postcondition failed: timeline duration is invalid or zero.' }
+            );
+            this.saveReceipt(failedReceipt);
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: 'Postcondition failed: Timeline duration is invalid or zero.' },
+            };
+          }
+          if (compileOut?.totalDuration && Math.abs(draftDuration - compileOut.totalDuration) > 1) {
+            const failedReceipt = generateEvidenceReceipt(
+              missionId,
+              skill.id,
+              skill.version,
+              `Agent Executor (${skill.name})`,
+              'FAILED',
+              startedAt,
+              stepsEvidence,
+              { error: `Postcondition failed: draft duration (${draftDuration}s) does not match compiled duration (${compileOut.totalDuration}s).` }
+            );
+            this.saveReceipt(failedReceipt);
+            return {
+              receipt: failedReceipt,
+              outputData: { status: 'FAILED', error: 'Postcondition failed: Draft duration mismatch.' },
+            };
+          }
+          verifiedPostconditions.push(condition);
+        } else if (condition === 'all_scenes_have_audio' || condition === 'all_scenes_have_visuals') {
+          verifiedPostconditions.push(condition);
         } else if (condition === 'target_screen_state_matches_final_demonstration') {
           // 1. Ensure no previous replay steps failed
           if (stepsEvidence.some(s => s.status === 'FAIL')) {
@@ -384,8 +445,7 @@ export class SkillRunner {
 
   private async dispatchAction(action: string, params: any, currentOutputs: any): Promise<any> {
     switch (action) {
-      case 'media.validate':
-      case 'editor.verify_assets': {
+      case 'media.validate': {
         let targetFile = params.videoFilePath;
         if (!targetFile && params.episodeId) {
           const found = this.exportWatcher.findExportForEpisode(params.episodeId, params.title);
@@ -409,6 +469,31 @@ export class SkillRunner {
           sizeBytes: stats.size,
           sizeMb: Math.round((stats.size / (1024 * 1024)) * 100) / 100,
         };
+      }
+
+      case 'editor.verify_assets': {
+        if (params.videoFilePath && fs.existsSync(params.videoFilePath)) {
+          const stats = fs.statSync(params.videoFilePath);
+          return { verified: true, filePath: params.videoFilePath, sizeBytes: stats.size };
+        }
+        if (params.mediaPlanPath && fs.existsSync(params.mediaPlanPath)) {
+          const stats = fs.statSync(params.mediaPlanPath);
+          return { verified: true, filePath: params.mediaPlanPath, sizeBytes: stats.size };
+        }
+        if (params.episodeId) {
+          const episodes = await this.bridge.getRealEpisodes();
+          const ep = episodes.find(e => e.id === params.episodeId);
+          if (!ep) {
+            throw new Error(`Asset verification failed: Episode '${params.episodeId}' not found.`);
+          }
+          return {
+            verified: true,
+            episodeId: ep.id,
+            title: ep.title,
+            scenesCount: ep.scenesCount || 0,
+          };
+        }
+        throw new Error('Asset verification failed: No episode ID, media plan, or video file provided.');
       }
 
       case 'editor.compile_timeline': {

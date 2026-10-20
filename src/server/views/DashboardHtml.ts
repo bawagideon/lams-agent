@@ -297,7 +297,7 @@ export function renderDashboardHtml(
       <section class="space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-bold text-gray-900">Your episodes</h2>
-          <button data-tab="episodes" class="nav-tab-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
+          <button data-tab="episodes" id="btnTabEpisodes" data-feature-id="btnTabEpisodes" title="View all episodes" class="nav-tab-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
             See all ${episodes.length}
           </button>
         </div>
@@ -333,7 +333,7 @@ export function renderDashboardHtml(
       <section class="space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-bold text-gray-900">What I can do for you</h2>
-          <button data-tab="skills" class="nav-tab-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
+          <button data-tab="skills" id="btnTabSkills" data-feature-id="btnTabSkills" title="View all skills" class="nav-tab-btn text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition">
             All skills
           </button>
         </div>
@@ -416,12 +416,12 @@ export function renderDashboardHtml(
             </span>
           </div>
 
-          <!-- Item 3: Supabase Sync -->
+          <!-- Item 3: Cloud Database Sync -->
           <div class="flex items-center justify-between py-1 border-t border-gray-100">
             <div class="flex items-center gap-3">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
               <span class="text-gray-800">
-                Database synced with Supabase (${episodes.length} episodes loaded, ${reviewEpisodes.length} ready to review)
+                Cloud database synced (${episodes.length} episodes loaded, ${reviewEpisodes.length} ready to review)
               </span>
             </div>
             <span class="text-gray-400">Synced</span>
@@ -436,7 +436,7 @@ export function renderDashboardHtml(
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">Your Episodes</h2>
-          <p class="text-xs text-gray-500 mt-0.5">Explore, preview, and release episodes from your Supabase production library</p>
+          <p class="text-xs text-gray-500 mt-0.5">Explore, preview, and release episodes from your cloud production library</p>
         </div>
 
         <!-- Controls: Live Search & Filter Pills -->
@@ -516,10 +516,10 @@ export function renderDashboardHtml(
           <p class="text-xs text-gray-500 mt-0.5">Automated creator workforce skills and interactive demonstration recorder</p>
         </div>
         <div class="flex items-center gap-2">
-          <button data-action="scroll-to-studio" class="bg-[#ede9fe] text-[#4338ca] hover:bg-[#ddd6fe] text-xs font-semibold px-4 py-2 rounded-xl transition shadow-2xs">
+          <button data-action="scroll-to-studio" id="btnScrollToStudio" data-feature-id="btnScrollToStudio" title="Open Demonstration Studio" class="bg-[#ede9fe] text-[#4338ca] hover:bg-[#ddd6fe] text-xs font-semibold px-4 py-2 rounded-xl transition shadow-2xs">
             Open Recorder Studio
           </button>
-          <button data-action="open-teach" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
+          <button data-action="open-teach" id="btnOpenTeach" data-feature-id="btnOpenTeach" title="Teach New Skill" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
             + Teach New Skill
           </button>
         </div>
@@ -683,13 +683,13 @@ export function renderDashboardHtml(
             <div class="pt-2 border-t border-gray-200/60">
               <span class="text-[10px] font-bold uppercase tracking-wider text-gray-500 block mb-1.5">Quick Presets:</span>
               <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
-                <button data-preset="youtube-shorts" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
+                <button data-preset="youtube-shorts" id="btnPresetYtShorts" data-feature-id="btnPresetYtShorts" title="Load YouTube Shorts preset template" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
                   YouTube Shorts
                 </button>
-                <button data-preset="capcut-captions" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
+                <button data-preset="capcut-captions" id="btnPresetCapcutCaptions" data-feature-id="btnPresetCapcutCaptions" title="Load CapCut Auto-Captions preset template" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
                   CapCut Captions
                 </button>
-                <button data-preset="tiktok-upload" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
+                <button data-preset="tiktok-upload" id="btnPresetTiktokUpload" data-feature-id="btnPresetTiktokUpload" title="Load TikTok Publishing preset template" class="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg transition font-medium">
                   TikTok Schedule
                 </button>
               </div>
@@ -860,7 +860,7 @@ export function renderDashboardHtml(
             <div class="flex items-center gap-3">
               <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center font-black text-white text-xs shadow-sm">DB</div>
               <div>
-                <h4 class="text-sm font-bold text-gray-900">Supabase Database</h4>
+                <h4 class="text-sm font-bold text-gray-900">Cloud Database</h4>
                 <p class="text-xs text-gray-500">Live Production Storage</p>
               </div>
             </div>
@@ -972,7 +972,7 @@ export function renderDashboardHtml(
           <button data-action="open-release" data-episode-id="${escapeHtml(currentEpisode.id)}" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
             Confirm
           </button>
-          <button data-action="quick-prompt" data-prompt="Change release time to Friday 6pm" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition">
+          <button data-action="quick-prompt" data-prompt="Change release time to Friday 6pm" id="btnQuickPromptTime" data-feature-id="btnQuickPromptTime" title="Ask assistant to reschedule release" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition">
             Change
           </button>
         </div>
@@ -984,13 +984,13 @@ export function renderDashboardHtml(
     <div class="p-4 border-t border-gray-100 space-y-3">
       <!-- Suggestion Chips (Matching Home@2x.png) -->
       <div class="flex items-center gap-2 overflow-x-auto text-[11px] pb-1">
-        <button data-action="quick-prompt" data-prompt="Show today's work" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+        <button data-action="quick-prompt" data-prompt="Show today's work" id="btnQuickPromptToday" data-feature-id="btnQuickPromptToday" title="Ask assistant to show today's work" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
           Show today's work
         </button>
-        <button data-action="quick-prompt" data-prompt="Make a Short for ${escapeHtml(currentEpisode.title)}" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+        <button data-action="quick-prompt" data-prompt="Make a Short for ${escapeHtml(currentEpisode.title)}" id="btnQuickPromptShort" data-feature-id="btnQuickPromptShort" title="Ask assistant to create a Short" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
           Make a Short
         </button>
-        <button data-action="open-teach" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
+        <button data-action="open-teach" id="btnOpenTeachPrompt" data-feature-id="btnOpenTeachPrompt" title="Open teach mode to train a new task" class="whitespace-nowrap border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-600 px-3 py-1.5 rounded-full transition">
           Teach me a task
         </button>
       </div>
@@ -1004,9 +1004,11 @@ export function renderDashboardHtml(
           class="w-full bg-white border border-gray-200 focus:border-indigo-500 rounded-2xl pl-4 pr-12 py-3 text-xs text-gray-900 placeholder-gray-400 focus:outline-none transition shadow-sm"
         />
         <button 
+          id="btnSendChat"
+          data-feature-id="btnSendChat"
           type="submit" 
           class="absolute right-2 w-8 h-8 rounded-xl bg-[#4338ca] hover:bg-[#3730a3] text-white flex items-center justify-center transition shadow-sm"
-          title="Send"
+          title="Send message to assistant"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
@@ -1105,7 +1107,7 @@ export function renderDashboardHtml(
           <h3 id="releaseEpisodeTitle" class="text-lg font-black text-gray-900">Release Room</h3>
           <p class="text-xs text-gray-500">Every upload starts private. Nothing goes public without your schedule.</p>
         </div>
-        <button data-action="close-release" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+        <button data-action="close-release" id="btnCloseReleaseX" data-feature-id="btnCloseReleaseX" title="Close Release Room" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
       </div>
 
       <!-- Live Preflight Checklist -->
@@ -1133,7 +1135,7 @@ export function renderDashboardHtml(
 
       <!-- Action Footer -->
       <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-        <button data-action="close-release" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+        <button data-action="close-release" id="btnCloseReleaseBtn" data-feature-id="btnCloseReleaseBtn" title="Cancel release" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
         <button id="btnConfirmRelease" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
@@ -1153,7 +1155,7 @@ export function renderDashboardHtml(
           <h3 id="teachModalTitle" class="text-base font-bold text-gray-900">Teach Me a New Task</h3>
           <p class="text-xs text-gray-500">Show me once in your browser or desktop app; I'll save it as a reusable skill.</p>
         </div>
-        <button data-action="close-teach" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
+        <button data-action="close-teach" id="btnCloseTeachX" data-feature-id="btnCloseTeachX" title="Close teach dialog" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
       </div>
 
       <div class="space-y-4 text-xs">
@@ -1181,7 +1183,7 @@ export function renderDashboardHtml(
       </div>
 
       <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
-        <button data-action="close-teach" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+        <button data-action="close-teach" id="btnCloseTeachBtn" data-feature-id="btnCloseTeachBtn" title="Cancel teach session" class="border border-gray-200 hover:border-gray-300 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
         <button id="btnCompileSkill" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition">
@@ -2262,7 +2264,7 @@ export function renderDashboardHtml(
           '</div>' +
           '<div class="flex items-center gap-2 shrink-0">' +
             syncStatusHtml +
-            '<button onclick="removeRecordedEvent(' + idx + ')" class="text-gray-300 hover:text-rose-500 font-bold px-1.5 py-0.5 rounded text-xs transition" title="Delete Step">' +
+            '<button onclick="removeRecordedEvent(' + idx + ')" data-feature-id="btn-remove-event" class="text-gray-300 hover:text-rose-500 font-bold px-1.5 py-0.5 rounded text-xs transition" title="Delete Step">' +
               '✕' +
             '</button>' +
           '</div>' +

@@ -52,6 +52,8 @@ async function runAllTests() {
     { file: 'scripts/test_publishing_failure_modes.ts', name: 'Publishing Failure Modes & Release Semantics' },
     { file: 'scripts/test_hardened_release.ts', name: 'Hardened Architecture & Live Release Audit' },
     { file: 'scripts/test_teach_recorder.ts', name: 'Demonstration Recorder, 3-Phase Lifecycle & Browser Exec' },
+    { file: 'scripts/test_feature_registry.ts', name: 'Feature Registry, UI Controls & Creator Language Compliance' },
+    { file: 'scripts/test_capcut_vertical_slice.ts', name: 'CapCut Vertical Slice Closed Loop (Record -> Review -> Compile -> Test -> Chat -> Verify)' },
     { file: 'scripts/test_ui_interactions.ts', name: 'UI Interaction Truthfulness & Navigation Audit' },
     { file: 'scripts/test_browser_e2e.ts', name: 'Browser-Driven End-to-End User Journeys (Playwright)' },
   ];

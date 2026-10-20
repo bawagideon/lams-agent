@@ -351,7 +351,7 @@ export function renderPreviewHtml(
           <span class="text-[11px] font-bold text-indigo-600 tracking-wide uppercase">Safe Mode Release Room</span>
           <h3 id="previewReleaseTitle" class="text-lg font-black text-gray-900">Confirm YouTube Release</h3>
         </div>
-        <button data-action="close-release" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
+        <button data-action="close-release" id="btnClosePreviewReleaseX" data-feature-id="btnClosePreviewReleaseX" title="Close Release Room" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
       </div>
 
       <p class="text-xs text-gray-500 leading-relaxed">
@@ -378,7 +378,7 @@ export function renderPreviewHtml(
 
       <!-- Modal Action Buttons -->
       <div class="flex items-center justify-end gap-3 pt-2">
-        <button data-action="close-release" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
+        <button data-action="close-release" id="btnClosePreviewReleaseBtn" data-feature-id="btnClosePreviewReleaseBtn" title="Cancel release" class="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-4 py-2.5 rounded-xl transition">
           Cancel
         </button>
         <button id="btnConfirmRelease" disabled class="bg-[#4338ca] hover:bg-[#3730a3] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-sm transition">
