@@ -53,6 +53,7 @@ async function runAllTests() {
     { file: 'scripts/test_hardened_release.ts', name: 'Hardened Architecture & Live Release Audit' },
     { file: 'scripts/test_teach_recorder.ts', name: 'Demonstration Recorder, 3-Phase Lifecycle & Browser Exec' },
     { file: 'scripts/test_ui_interactions.ts', name: 'UI Interaction Truthfulness & Navigation Audit' },
+    { file: 'scripts/test_browser_e2e.ts', name: 'Browser-Driven End-to-End User Journeys (Playwright)' },
   ];
 
   const results: SuiteResult[] = [];

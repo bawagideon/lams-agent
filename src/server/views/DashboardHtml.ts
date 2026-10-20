@@ -4,6 +4,15 @@ import type { SkillContract } from '../../contracts/SkillContract.ts';
 import type { ExportedVideoFile } from '../../adapters/media/ExportFolderWatcher.ts';
 import { escapeHtml } from '../utils/htmlEscape.ts';
 
+export interface ActivityFeedItem {
+  id: string;
+  title: string;
+  description: string;
+  receiptId: string;
+  status: 'Verified Pass' | 'Failed' | 'Pending' | 'Active';
+  timestamp: string;
+}
+
 export function renderDashboardHtml(
   episodes: RealEpisode[],
   metrics: Record<string, number>,
@@ -11,7 +20,8 @@ export function renderDashboardHtml(
   skills: SkillContract[],
   exportedVideos: ExportedVideoFile[],
   selectedEpisodeId?: string,
-  initialTab: string = 'home'
+  initialTab: string = 'home',
+  activities: ActivityFeedItem[] = []
 ): string {
   const currentEpisode = episodes.find(e => e.id === selectedEpisodeId) || episodes.find(e => e.status === 'Review') || episodes[0] || {
     id: 'ep-none',
@@ -87,6 +97,14 @@ export function renderDashboardHtml(
     ::-webkit-scrollbar-track { background: rgba(0,0,0,0.03); }
     ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
 <body class="h-full flex flex-col md:flex-row overflow-hidden antialiased bg-[#f8fafc]">
@@ -422,8 +440,8 @@ export function renderDashboardHtml(
         </div>
 
         <!-- Controls: Live Search & Filter Pills -->
-        <div class="flex items-center gap-3">
-          <div class="relative w-64">
+        <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <div class="relative w-full sm:w-64">
             <input 
               type="text" 
               id="episodeSearchInput" 
@@ -435,7 +453,7 @@ export function renderDashboardHtml(
             </svg>
           </div>
 
-          <div class="flex items-center gap-1.5 text-xs">
+          <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <button data-filter="all" id="filter-btn-all" class="filter-ep-btn bg-[#4338ca] text-white px-3 py-1.5 rounded-lg font-medium transition shadow-sm">All (${episodes.length})</button>
             <button data-filter="Review" id="filter-btn-review" class="filter-ep-btn bg-amber-100 text-amber-900 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-medium transition">Needs Review (${metrics.Review || 0})</button>
             <button data-filter="Draft" id="filter-btn-draft" class="filter-ep-btn bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-medium transition">Draft (${metrics.Draft || 0})</button>
@@ -451,7 +469,7 @@ export function renderDashboardHtml(
             data-title="${encodeURIComponent(ep.title.toLowerCase())}"
             data-project="${encodeURIComponent(ep.projectName.toLowerCase())}"
             data-status="${ep.status}"
-            class="bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4"
+            class="episode-card bg-white border border-gray-200/80 rounded-2xl p-5 shadow-sm card-hover flex flex-col justify-between space-y-4"
           >
             <div>
               <div class="flex items-center justify-between">
@@ -541,7 +559,10 @@ export function renderDashboardHtml(
             <a id="btnDownloadVideo" download="demonstration_recording.webm" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer">
               <span>⬇ Download Video</span>
             </a>
-            <span id="recorderVideoSyncBadge" class="hidden text-[10px] font-semibold px-2.5 py-1 rounded-lg"></span>
+            <span id="recorderVideoSyncBadge" class="hidden text-xs font-semibold px-2.5 py-1 rounded-lg"></span>
+            <button id="btnRetryUploadVideo" type="button" class="hidden text-xs font-bold px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 transition flex items-center gap-1">
+              <span>🔄 Retry Upload</span>
+            </button>
             <button id="btnClearRecording" class="border border-gray-200 hover:border-gray-300 text-gray-600 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition">
               Reset
             </button>
@@ -740,43 +761,30 @@ export function renderDashboardHtml(
       </div>
 
       <div class="bg-white border border-gray-200/80 rounded-2xl divide-y divide-gray-100 shadow-sm text-xs">
-        <div class="p-4 flex items-center justify-between card-hover">
-          <div class="flex items-center gap-3">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <div>
-              <span class="font-bold text-gray-900">CapCut Timeline Assembly</span>
-              <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_7f3a8b29</span>
-              <p class="text-[11px] text-gray-500 mt-0.5">Generated JSON draft with multi-track layout and transition markers</p>
+        ${activities && activities.length > 0 ? activities.map(act => `
+          <div class="p-4 flex items-center justify-between card-hover">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="w-2.5 h-2.5 rounded-full ${act.status === 'Verified Pass' ? 'bg-emerald-500' : (act.status === 'Failed' ? 'bg-rose-500' : 'bg-amber-400')} shrink-0"></span>
+              <div class="min-w-0 truncate">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-gray-900 truncate">${escapeHtml(act.title)}</span>
+                  <span class="text-gray-400 text-[11px] font-mono shrink-0">${escapeHtml(act.receiptId)}</span>
+                </div>
+                <p class="text-[11px] text-gray-500 mt-0.5 truncate">${escapeHtml(act.description)}</p>
+                <span class="text-[10px] text-gray-400">${new Date(act.timestamp).toLocaleString()}</span>
+              </div>
             </div>
+            <span class="${act.status === 'Verified Pass' ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : (act.status === 'Failed' ? 'text-rose-700 bg-rose-50 border-rose-100' : 'text-amber-800 bg-amber-50 border-amber-200')} px-3 py-1 rounded-full font-semibold border shrink-0">
+              ${act.status}
+            </span>
           </div>
-          <span class="text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-semibold border border-emerald-100">Verified Pass</span>
-        </div>
-
-        <div class="p-4 flex items-center justify-between card-hover">
-          <div class="flex items-center gap-3">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            <div>
-              <span class="font-bold text-gray-900">Scene Assets Sync</span>
-              <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_4a1c9e88</span>
-              <p class="text-[11px] text-gray-500 mt-0.5">Synced 159 scene clips from Supabase studio assets bucket</p>
-            </div>
+        `).join('') : `
+          <div class="p-8 text-center text-gray-400 space-y-2">
+            <span class="text-2xl">📋</span>
+            <p class="font-medium text-gray-600">No activity receipts logged yet</p>
+            <p class="text-[11px] text-gray-400">Run a skill or generate a draft to populate real verified receipts.</p>
           </div>
-          <span class="text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full font-semibold border border-emerald-100">Verified Pass</span>
-        </div>
-
-        <div class="p-4 flex items-center justify-between card-hover">
-          <div class="flex items-center gap-3">
-            <span class="w-2.5 h-2.5 rounded-full ${channel.isConnected ? 'bg-emerald-500' : 'bg-amber-400'}"></span>
-            <div>
-              <span class="font-bold text-gray-900">YouTube Channel Link Check</span>
-              <span class="text-gray-400 text-[11px] ml-2 font-mono">rcpt_yt_status</span>
-              <p class="text-[11px] text-gray-500 mt-0.5">${channel.isConnected ? `Connected to ${escapeHtml(channel.title)}` : 'Channel authorization pending'}</p>
-            </div>
-          </div>
-          <span class="${channel.isConnected ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : 'text-amber-800 bg-amber-50 border-amber-200'} px-3 py-1 rounded-full font-semibold border">
-            ${channel.isConnected ? 'Active' : 'Action Needed'}
-          </span>
-        </div>
+        `}
       </div>
     </div>
 
@@ -856,10 +864,14 @@ export function renderDashboardHtml(
                 <p class="text-xs text-gray-500">Live Production Storage</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Connected</span>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${process.env.SUPABASE_URL ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-700 border border-gray-200'}">
+              ${process.env.SUPABASE_URL ? 'Connected' : 'Local Fallback'}
+            </span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
-            Connected to project <code class="bg-gray-100 text-indigo-700 px-1.5 py-0.5 rounded font-mono">sobgbrdggmgwajrqjosq</code>. Tracking 48 episodes and 159 scene clips.
+            ${process.env.SUPABASE_URL 
+              ? `Connected to project <code class="bg-gray-100 text-indigo-700 px-1.5 py-0.5 rounded font-mono">sobgbrdggmgwajrqjosq</code>. Tracking ${episodes.length} episodes and library assets.` 
+              : `Operating in local fallback mode. Tracking ${episodes.length} episodes.`}
           </p>
         </div>
 
@@ -873,10 +885,14 @@ export function renderDashboardHtml(
                 <p class="text-xs text-gray-500">Timeline & Draft Injection</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Ready</span>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${process.env.VERCEL || process.env.IS_CLOUD === 'true' ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+              ${process.env.VERCEL || process.env.IS_CLOUD === 'true' ? 'Worker Queued' : 'Ready'}
+            </span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
-            Assembles multi-track JSON drafts with local audio, video clips, and transition points.
+            ${process.env.VERCEL || process.env.IS_CLOUD === 'true'
+              ? 'Cloud mode: Draft requests are queued for execution on the Windows Desktop Worker.'
+              : 'Local mode: Assembles multi-track JSON drafts with local audio, video clips, and transition points directly in CapCut drafts.'}
           </p>
         </div>
 
@@ -887,13 +903,17 @@ export function renderDashboardHtml(
               <div class="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center font-black text-white text-xs shadow-sm">FF</div>
               <div>
                 <h4 class="text-sm font-bold text-gray-900">Video Rendering Engine</h4>
-                <p class="text-xs text-gray-500">Local Headless Stitching</p>
+                <p class="text-xs text-gray-500">Deterministic Video Stitching</p>
               </div>
             </div>
-            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Installed</span>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${process.env.VERCEL || process.env.IS_CLOUD === 'true' ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
+              ${process.env.VERCEL || process.env.IS_CLOUD === 'true' ? 'Worker Queued' : 'Installed'}
+            </span>
           </div>
           <p class="text-xs text-gray-600 leading-relaxed">
-            Deterministic rendering substrate for video concatenation, transitions, and audio ducking.
+            ${process.env.VERCEL || process.env.IS_CLOUD === 'true'
+              ? 'Cloud mode: Video rendering jobs are enqueued for processing by the Windows Desktop Worker.'
+              : 'Local mode: Deterministic headless FFmpeg rendering substrate for video concatenation, transitions, and audio ducking.'}
           </p>
         </div>
       </div>
@@ -999,7 +1019,7 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 4. STUDIO ACCESS KEY MODAL                                   -->
   <!-- ============================================================ -->
-  <div id="studioKeyModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="studioKeyModal" role="dialog" aria-modal="true" aria-labelledby="studioKeyTitle" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2.5">
@@ -1007,7 +1027,7 @@ export function renderDashboardHtml(
             🔑
           </div>
           <div>
-            <h3 class="text-base font-black text-gray-900">Studio Key Required</h3>
+            <h3 id="studioKeyTitle" class="text-base font-black text-gray-900">Studio Key Required</h3>
             <p class="text-[11px] text-gray-500">Authorize CapCut & Render pipeline</p>
           </div>
         </div>
@@ -1048,7 +1068,7 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 5. OPERATION RESULT MODAL (CapCut & FFmpeg)                  -->
   <!-- ============================================================ -->
-  <div id="studioResultModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="studioResultModal" role="dialog" aria-modal="true" aria-labelledby="studioResultTitle" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2.5">
@@ -1076,7 +1096,7 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 6. DEDICATED RELEASE ROOM MODAL (Safe Mode Publishing)       -->
   <!-- ============================================================ -->
-  <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+  <div id="releaseRoomModal" role="dialog" aria-modal="true" aria-labelledby="releaseEpisodeTitle" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
     <div class="bg-white max-w-xl w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-3 border-b border-gray-100">
@@ -1105,6 +1125,7 @@ export function renderDashboardHtml(
           <input id="releaseDate" type="date" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
           <input id="releaseTime" type="time" value="19:00" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
         </div>
+        <p class="text-[11px] text-gray-400">Uploaded privately first. YouTube will automatically transition to public at this scheduled time.</p>
       </div>
 
       <!-- Status / Notice -->
@@ -1125,11 +1146,11 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 5. TEACH SKILL MODAL (Compiled Demonstrations)              -->
   <!-- ============================================================ -->
-  <div id="teachModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+  <div id="teachModal" role="dialog" aria-modal="true" aria-labelledby="teachModalTitle" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
     <div class="bg-white max-w-lg w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
       <div class="flex items-center justify-between pb-3 border-b border-gray-100">
         <div>
-          <h3 class="text-base font-bold text-gray-900">Teach Me a New Task</h3>
+          <h3 id="teachModalTitle" class="text-base font-bold text-gray-900">Teach Me a New Task</h3>
           <p class="text-xs text-gray-500">Show me once in your browser or desktop app; I'll save it as a reusable skill.</p>
         </div>
         <button data-action="close-teach" class="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
@@ -1173,7 +1194,7 @@ export function renderDashboardHtml(
   <!-- ============================================================ -->
   <!-- 5B. SKILL EXECUTION APPROVAL MODAL (Human Gate Review)      -->
   <!-- ============================================================ -->
-  <div id="skillApprovalModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+  <div id="skillApprovalModal" role="dialog" aria-modal="true" aria-labelledby="skillApprovalTitle" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
     <div class="bg-white max-w-lg w-full p-6 rounded-3xl border border-gray-200 space-y-5 shadow-2xl">
       <div class="flex items-center justify-between pb-3 border-b border-gray-100">
         <div>
@@ -1599,6 +1620,25 @@ export function renderDashboardHtml(
       list.innerHTML = '<div class="text-center py-3 text-gray-400">Loading preflight verification...</div>';
       btn.disabled = true;
 
+      // Ensure release date/time inputs are initialized
+      const dateInp = document.getElementById('releaseDate');
+      const timeInp = document.getElementById('releaseTime');
+      if (dateInp && !dateInp.value) {
+        const tmr = new Date();
+        tmr.setDate(tmr.getDate() + 1);
+        dateInp.value = tmr.toISOString().split('T')[0];
+      }
+      const pubDate = dateInp ? dateInp.value : '';
+      const pubTime = timeInp ? timeInp.value : '19:00';
+      let currentPublishAt = null;
+      if (pubDate && pubTime) {
+        try {
+          const dt = new Date(pubDate + 'T' + pubTime);
+          if (!isNaN(dt.getTime())) currentPublishAt = dt.toISOString();
+        } catch {}
+      }
+      window.__activePublishAt = currentPublishAt;
+
       try {
         const res = await fetch('/api/episodes/' + epId + '/release-check');
         const check = await res.json();
@@ -1627,12 +1667,18 @@ export function renderDashboardHtml(
         let ytStatusHtml = '';
         if (check.youtube && check.youtube.connected) {
           ytStatusHtml = clientEscapeHtml(check.youtube.channelTitle);
-        } else if (check.youtube && check.youtube.authUrl && /^https?:\/\//i.test(check.youtube.authUrl)) {
+        } else if (check.youtube && check.youtube.authUrl && (check.youtube.authUrl.startsWith('http://') || check.youtube.authUrl.startsWith('https://'))) {
           ytStatusHtml = '<a href="' + clientEscapeHtml(check.youtube.authUrl) + '" class="text-indigo-600 font-bold underline" rel="noopener noreferrer">Link Account</a>';
         } else {
           ytStatusHtml = '<span class="text-gray-400">Not Linked</span>';
         }
         html += '<span class="font-mono text-gray-500">' + ytStatusHtml + '</span>';
+        html += '</div>';
+
+        // Scheduled Go-Live
+        html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
+        html += '<span class="flex items-center gap-2">📅 <span>Scheduled Go-Live</span></span>';
+        html += '<span class="font-bold text-gray-800">' + (currentPublishAt ? new Date(currentPublishAt).toLocaleString() : 'Immediate Private Release') + '</span>';
         html += '</div>';
 
         // Privacy
@@ -1644,8 +1690,12 @@ export function renderDashboardHtml(
         list.innerHTML = html;
 
         if (check.canRelease) {
-          // Request signed proposal token
-          const propRes = await fetch('/api/episodes/' + activeReleaseEpId + '/propose-release', { method: 'POST' });
+          // Request signed proposal token binding exact publishAt
+          const propRes = await fetch('/api/episodes/' + activeReleaseEpId + '/propose-release', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publishAt: currentPublishAt }),
+          });
           const propData = await propRes.json();
           if (propData.success && propData.approvalToken) {
             window.__activeApprovalToken = propData.approvalToken;
@@ -1687,19 +1737,24 @@ export function renderDashboardHtml(
 
       try {
         const token = window.__activeApprovalToken || '';
+        const publishAt = window.__activePublishAt || null;
         const res = await fetch('/api/episodes/' + activeReleaseEpId + '/approve', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Approval-Token': token,
           },
-          body: JSON.stringify({ approvalToken: token }),
+          body: JSON.stringify({ approvalToken: token, publishAt }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
         msg.className = 'bg-emerald-50 text-emerald-900 border border-emerald-200 p-3 rounded-xl text-xs space-y-1';
-        msg.innerHTML = '<strong>✓ Release Published to YouTube (Private Review)!</strong><br/>Video ID: <code class="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300">' + clientEscapeHtml(data.videoId) + '</code>. Status updated to <strong>' + clientEscapeHtml(data.newStatus || 'Scheduled') + '</strong>.';
+        const isScheduled = data.newStatus === 'Scheduled' && publishAt;
+        const scheduleNotice = isScheduled
+          ? '<br/>Scheduled to go live on <strong>' + new Date(publishAt).toLocaleString() + '</strong>.'
+          : '<br/>Uploaded privately for manual review.';
+        msg.innerHTML = '<strong>✓ Release Published to YouTube (Private Review)!</strong><br/>Video ID: <code class="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300">' + clientEscapeHtml(data.videoId) + '</code>.' + scheduleNotice + '<br/>Status updated to <strong>' + clientEscapeHtml(data.newStatus || 'Scheduled') + '</strong>.';
         msg.classList.remove('hidden');
 
         btn.innerText = '✓ Published';
@@ -1737,8 +1792,126 @@ export function renderDashboardHtml(
     let localRecordedEvents = [];
     let mediaRecorder = null;
     let recordedMediaChunks = [];
-    let pendingRunSkillId = null;
-    let pendingRunApprovalToken = null;
+    let recorderLifecycleState = 'IDLE'; // 'IDLE' | 'RECORDING' | 'FINALIZING' | 'UPLOADING' | 'PERSISTED' | 'LOCAL_ONLY'
+    let lastRecordedBlob = null;
+    let lastRecordedSessionId = null;
+
+    function setRecorderLifecycle(state, details) {
+      recorderLifecycleState = state;
+      const statusBadge = document.getElementById('recorderStatusBadge');
+      const syncBadge = document.getElementById('recorderVideoSyncBadge');
+      const retryBtn = document.getElementById('btnRetryUploadVideo');
+      const startBtn = document.getElementById('btnStartCapture');
+      const stopBtn = document.getElementById('btnStopCapture');
+
+      if (state === 'IDLE') {
+        if (statusBadge) {
+          statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide';
+          statusBadge.innerText = 'Standby';
+        }
+        if (syncBadge) syncBadge.classList.add('hidden');
+        if (retryBtn) retryBtn.classList.add('hidden');
+        if (startBtn) startBtn.classList.remove('hidden');
+        if (stopBtn) stopBtn.classList.add('hidden');
+      } else if (state === 'RECORDING') {
+        if (statusBadge) {
+          statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 uppercase tracking-wide animate-pulse';
+          statusBadge.innerText = 'Recording Live';
+        }
+        if (syncBadge) syncBadge.classList.add('hidden');
+        if (retryBtn) retryBtn.classList.add('hidden');
+        if (startBtn) startBtn.classList.add('hidden');
+        if (stopBtn) stopBtn.classList.remove('hidden');
+      } else if (state === 'FINALIZING') {
+        if (statusBadge) {
+          statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wide animate-pulse';
+          statusBadge.innerText = 'Finalizing Media';
+        }
+        if (startBtn) startBtn.classList.add('hidden');
+        if (stopBtn) stopBtn.classList.add('hidden');
+      } else if (state === 'UPLOADING') {
+        if (syncBadge) {
+          syncBadge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 animate-pulse';
+          syncBadge.innerText = (details && typeof details.pct === 'number') ? ('⏳ Uploading ' + details.pct + '%...') : '⏳ Persisting video...';
+          syncBadge.classList.remove('hidden');
+        }
+        if (retryBtn) retryBtn.classList.add('hidden');
+      } else if (state === 'PERSISTED') {
+        if (statusBadge) {
+          statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide';
+          statusBadge.innerText = 'Ready to Compile';
+        }
+        if (syncBadge) {
+          syncBadge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200';
+          syncBadge.innerText = '✓ Video Stored (' + (details?.sizeMb || '0.00') + ' MB)';
+          syncBadge.classList.remove('hidden');
+        }
+        if (retryBtn) retryBtn.classList.add('hidden');
+      } else if (state === 'LOCAL_ONLY') {
+        if (statusBadge) {
+          statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide';
+          statusBadge.innerText = 'Ready to Compile';
+        }
+        if (syncBadge) {
+          syncBadge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200';
+          syncBadge.innerText = '⚠️ Video local only (' + (details?.error || 'Upload failed') + ')';
+          syncBadge.classList.remove('hidden');
+        }
+        if (retryBtn) retryBtn.classList.remove('hidden');
+      }
+    }
+
+    async function uploadRecordedVideo(blob, sessionId) {
+      if (!blob) return false;
+      lastRecordedBlob = blob;
+      lastRecordedSessionId = sessionId || ('rec_' + Date.now());
+      sessionId = lastRecordedSessionId;
+
+      setRecorderLifecycle('UPLOADING');
+
+      return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/teach/record/video?sessionId=' + encodeURIComponent(sessionId));
+        xhr.setRequestHeader('Content-Type', 'video/webm');
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            setRecorderLifecycle('UPLOADING', { pct });
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const upData = JSON.parse(xhr.responseText);
+              const mbNum = typeof upData.sizeMb === 'number' ? upData.sizeMb : (blob.size / (1024 * 1024));
+              const displayMb = mbNum < 0.01 ? '<0.01' : mbNum.toFixed(2);
+              setRecorderLifecycle('PERSISTED', { sizeMb: displayMb });
+            } catch {
+              const displayMb = (blob.size / (1024 * 1024)).toFixed(2);
+              setRecorderLifecycle('PERSISTED', { sizeMb: displayMb });
+            }
+            resolve(true);
+          } else {
+            let errMsg = 'HTTP ' + xhr.status;
+            try {
+              const errObj = JSON.parse(xhr.responseText);
+              if (errObj.error) errMsg = errObj.error;
+            } catch {}
+            setRecorderLifecycle('LOCAL_ONLY', { error: errMsg });
+            resolve(false);
+          }
+        };
+
+        xhr.onerror = () => {
+          setRecorderLifecycle('LOCAL_ONLY', { error: 'Network Error' });
+          resolve(false);
+        };
+
+        xhr.send(blob);
+      });
+    }
 
     function updateRecordingTimer() {
       const elapsedSec = Math.floor((Date.now() - recordingStartTime) / 1000);
@@ -1804,15 +1977,8 @@ export function renderDashboardHtml(
 
         document.getElementById('viewfinderIdleOverlay')?.classList.add('hidden');
         document.getElementById('recorderLiveHud')?.classList.remove('hidden');
-        document.getElementById('btnStartCapture')?.classList.add('hidden');
-        document.getElementById('btnStopCapture')?.classList.remove('hidden');
         document.getElementById('btnDownloadVideo')?.classList.add('hidden');
-
-        const badge = document.getElementById('recorderStatusBadge');
-        if (badge) {
-          badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 uppercase tracking-wide animate-pulse';
-          badge.innerText = 'Recording Live';
-        }
+        setRecorderLifecycle('RECORDING');
 
         recordingStartTime = Date.now();
         updateRecordingTimer();
@@ -1868,11 +2034,14 @@ export function renderDashboardHtml(
         }
       } catch (err) {
         console.warn('Screen capture declined or unsupported:', err);
-        alert('Screen capture notice: ' + err.message + '\nYou can still record workflow steps manually using the Action Step Palette!');
+        alert('Screen capture notice: ' + err.message + '\\nYou can still record workflow steps manually using the Action Step Palette!');
       }
     }
 
     async function stopScreenCapture() {
+      if (recorderLifecycleState === 'FINALIZING' || recorderLifecycleState === 'UPLOADING') {
+        return;
+      }
       if (recordingTimerInterval) {
         clearInterval(recordingTimerInterval);
         recordingTimerInterval = null;
@@ -1881,6 +2050,8 @@ export function renderDashboardHtml(
         window.__liveCaptureCleanup();
         window.__liveCaptureCleanup = null;
       }
+
+      setRecorderLifecycle('FINALIZING');
 
       // Await real MediaRecorder onstop event before assembling blob
       const assembleMediaPromise = new Promise((resolve) => {
@@ -1892,33 +2063,8 @@ export function renderDashboardHtml(
           if (recordedMediaChunks.length > 0) {
             const blob = new Blob(recordedMediaChunks, { type: 'video/webm' });
             const blobUrl = URL.createObjectURL(blob);
-            const badge = document.getElementById('recorderVideoSyncBadge');
-            if (badge) {
-              badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 animate-pulse';
-              badge.innerText = '⏳ Persisting video...';
-              badge.classList.remove('hidden');
-            }
-            try {
-              const upRes = await fetch('/api/teach/record/video?sessionId=' + encodeURIComponent('rec_' + Date.now()), {
-                method: 'POST',
-                headers: { 'Content-Type': 'video/webm' },
-                body: blob
-              });
-              if (!upRes.ok) throw new Error('HTTP ' + upRes.status);
-              const upData = await upRes.json();
-              if (badge) {
-                const mbNum = typeof upData.sizeMb === 'number' ? upData.sizeMb : (blob.size / (1024 * 1024));
-                const displayMb = mbNum < 0.01 ? '<0.01' : mbNum.toFixed(2);
-                badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200';
-                badge.innerText = '✓ Video Stored (' + displayMb + ' MB)';
-              }
-            } catch (syncErr) {
-              console.warn('Could not sync video to server:', syncErr);
-              if (badge) {
-                badge.className = 'text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200';
-                badge.innerText = '⚠️ Video local only (' + syncErr.message + ')';
-              }
-            }
+            const currentSessionId = 'rec_' + Date.now();
+            await uploadRecordedVideo(blob, currentSessionId);
             resolve(blobUrl);
           } else {
             resolve(null);
@@ -1961,13 +2107,8 @@ export function renderDashboardHtml(
       }
 
       document.getElementById('recorderLiveHud')?.classList.add('hidden');
-      document.getElementById('btnStartCapture')?.classList.remove('hidden');
-      document.getElementById('btnStopCapture')?.classList.add('hidden');
-
-      const badge = document.getElementById('recorderStatusBadge');
-      if (badge) {
-        badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide';
-        badge.innerText = 'Ready to Compile';
+      if (recorderLifecycleState === 'FINALIZING') {
+        setRecorderLifecycle('PERSISTED', { sizeMb: '0.00' });
       }
 
       try {
@@ -1978,16 +2119,14 @@ export function renderDashboardHtml(
       }
     }
 
-    function resetRecorderStudio() {
-      stopScreenCapture();
+    async function resetRecorderStudio() {
+      await stopScreenCapture();
       localRecordedEvents = [];
       window.__isPresetTemplateLoaded = false;
+      lastRecordedBlob = null;
+      lastRecordedSessionId = null;
       renderRecordedEventsStream();
-      const badge = document.getElementById('recorderStatusBadge');
-      if (badge) {
-        badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide';
-        badge.innerText = 'Standby';
-      }
+      setRecorderLifecycle('IDLE');
       document.getElementById('btnDownloadVideo')?.classList.add('hidden');
       const video = document.getElementById('recorderScreenVideo');
       if (video) {
@@ -2436,7 +2575,20 @@ export function renderDashboardHtml(
       document.getElementById('btnQuickSelectScreen')?.addEventListener('click', startScreenCapture);
       document.getElementById('btnStopCapture')?.addEventListener('click', stopScreenCapture);
       document.getElementById('btnClearRecording')?.addEventListener('click', resetRecorderStudio);
+      document.getElementById('btnRetryUploadVideo')?.addEventListener('click', () => {
+        if (lastRecordedBlob) {
+          uploadRecordedVideo(lastRecordedBlob, lastRecordedSessionId);
+        }
+      });
       document.getElementById('btnCompileFromStudio')?.addEventListener('click', compileStudioSkill);
+
+      // Release Room Scheduling Inputs
+      document.getElementById('releaseDate')?.addEventListener('change', () => {
+        if (activeReleaseEpId) openReleaseRoom(activeReleaseEpId);
+      });
+      document.getElementById('releaseTime')?.addEventListener('change', () => {
+        if (activeReleaseEpId) openReleaseRoom(activeReleaseEpId);
+      });
 
       // Studio Palette Buttons
       document.getElementById('palBtnClick')?.addEventListener('click', () => {
@@ -2596,6 +2748,7 @@ export function renderDashboardHtml(
           closeReleaseRoom();
           closeTeachModal();
           closeSkillApprovalModal();
+          document.getElementById('studioResultModal')?.classList.add('hidden');
         }
       });
 

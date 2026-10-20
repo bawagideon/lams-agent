@@ -47,6 +47,14 @@ export function renderPreviewHtml(
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: rgba(0,0,0,0.03); }
     ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 4px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
   </style>
 </head>
 <body class="min-h-full flex flex-col bg-[#f8fafc] text-gray-900 antialiased">
@@ -54,8 +62,8 @@ export function renderPreviewHtml(
   <!-- ============================================================ -->
   <!-- 1. TOP BAR NAVIGATION                                        -->
   <!-- ============================================================ -->
-  <header class="border-b border-gray-200/80 bg-white px-8 py-4 flex items-center justify-between sticky top-0 z-40 shadow-sm backdrop-blur-md">
-    <div class="flex items-center space-x-5">
+  <header class="border-b border-gray-200/80 bg-white px-4 sm:px-8 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-40 shadow-sm backdrop-blur-md">
+    <div class="flex items-center space-x-3 sm:space-x-5">
       <a href="/episodes" class="text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 font-semibold border border-gray-200 px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
@@ -81,7 +89,7 @@ export function renderPreviewHtml(
     </div>
 
     <!-- Actions Header -->
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-2 sm:gap-3">
       <button id="btnCapCutTop" data-episode-id="${escapeHtml(episode.id)}" class="border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-800 text-xs font-semibold px-4 py-2 rounded-xl transition shadow-sm">
         ✂️ Open in CapCut
       </button>
@@ -97,7 +105,7 @@ export function renderPreviewHtml(
   <!-- ============================================================ -->
   <!-- 2. MAIN WORKSPACE GRID                                       -->
   <!-- ============================================================ -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-8 grid grid-cols-12 gap-8">
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 grid grid-cols-12 gap-6 sm:gap-8">
     
     <!-- Left Column: Video Player & Filmstrip (7 cols) -->
     <div class="col-span-12 lg:col-span-7 space-y-6">
@@ -259,7 +267,7 @@ export function renderPreviewHtml(
   <!-- ============================================================ -->
   <!-- 3. STUDIO ACCESS KEY MODAL                                   -->
   <!-- ============================================================ -->
-  <div id="studioKeyModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="studioKeyModal" role="dialog" aria-modal="true" aria-labelledby="studioKeyTitle" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-200 space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2.5">
@@ -267,7 +275,7 @@ export function renderPreviewHtml(
             🔑
           </div>
           <div>
-            <h3 class="text-base font-black text-gray-900">Studio Key Required</h3>
+            <h3 id="studioKeyTitle" class="text-base font-black text-gray-900">Studio Key Required</h3>
             <p class="text-[11px] text-gray-500">Authorize CapCut & Render pipeline</p>
           </div>
         </div>
@@ -308,7 +316,7 @@ export function renderPreviewHtml(
   <!-- ============================================================ -->
   <!-- 4. OPERATION RESULT MODAL (CapCut & FFmpeg)                  -->
   <!-- ============================================================ -->
-  <div id="studioResultModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="studioResultModal" role="dialog" aria-modal="true" aria-labelledby="studioResultTitle" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2.5">
@@ -336,23 +344,33 @@ export function renderPreviewHtml(
   <!-- ============================================================ -->
   <!-- 5. SAFE-MODE RELEASE ROOM MODAL                              -->
   <!-- ============================================================ -->
-  <div id="releaseRoomModal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="releaseRoomModal" role="dialog" aria-modal="true" aria-labelledby="previewReleaseTitle" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl max-w-lg w-full p-7 shadow-2xl border border-gray-200 space-y-5">
       <div class="flex items-center justify-between">
         <div>
           <span class="text-[11px] font-bold text-indigo-600 tracking-wide uppercase">Safe Mode Release Room</span>
-          <h3 class="text-lg font-black text-gray-900">Confirm YouTube Release</h3>
+          <h3 id="previewReleaseTitle" class="text-lg font-black text-gray-900">Confirm YouTube Release</h3>
         </div>
         <button data-action="close-release" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg">✕</button>
       </div>
 
       <p class="text-xs text-gray-500 leading-relaxed">
-        LAMS HQ will upload your video directly to YouTube as a <strong>Private video</strong>. It will not be visible to the public until you choose to publish it.
+        LAMS HQ will upload your video directly to YouTube as a <strong>Private video</strong>. Scheduled videos will automatically transition to public at your selected Go-Live time.
       </p>
 
       <!-- Preflight Checklist Container -->
       <div id="preflightList" class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3 text-xs">
         <div class="text-center py-3 text-gray-400">Checking release prerequisites...</div>
+      </div>
+
+      <!-- Schedule Time -->
+      <div class="space-y-2">
+        <label class="block text-xs font-bold text-gray-800">Publication Time (Go Live)</label>
+        <div class="grid grid-cols-2 gap-3">
+          <input id="releaseDate" type="date" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
+          <input id="releaseTime" type="time" value="19:00" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-indigo-500" />
+        </div>
+        <p class="text-[11px] text-gray-400">Uploaded as private review first. Releases automatically go live at this scheduled time.</p>
       </div>
 
       <!-- Status or Error Message -->
@@ -625,7 +643,7 @@ export function renderPreviewHtml(
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Failed to assemble CapCut draft');
         if (data.queued) {
-          alert('⏳ CapCut draft assembly is queued for the Windows Desktop Worker.\nJob ID: ' + (data.jobId || 'pending') + '\nThis is not complete yet. Confirm the worker finishes the job before opening CapCut.');
+          alert('⏳ CapCut draft assembly is queued for the Windows Desktop Worker.\\nJob ID: ' + (data.jobId || 'pending') + '\\nThis is not complete yet. Confirm the worker finishes the job before opening CapCut.');
           return;
         }
         showCapCutSuccessModal(data);
@@ -654,7 +672,7 @@ export function renderPreviewHtml(
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Failed to render master video');
         if (data.queued) {
-          alert('⏳ Video rendering is queued for the Windows Desktop Worker.\nJob ID: ' + (data.jobId || 'pending') + '\nThe master video is not ready yet; wait for the worker to finish and the export to sync before publishing.');
+          alert('⏳ Video rendering is queued for the Windows Desktop Worker.\\nJob ID: ' + (data.jobId || 'pending') + '\\nThe master video is not ready yet; wait for the worker to finish and the export to sync before publishing.');
           return;
         }
         showRenderSuccessModal(data);
@@ -680,6 +698,25 @@ export function renderPreviewHtml(
       btn.disabled = true;
       currentApprovalToken = null;
 
+      // Ensure release date/time inputs are initialized
+      const dateInp = document.getElementById('releaseDate');
+      const timeInp = document.getElementById('releaseTime');
+      if (dateInp && !dateInp.value) {
+        const tmr = new Date();
+        tmr.setDate(tmr.getDate() + 1);
+        dateInp.value = tmr.toISOString().split('T')[0];
+      }
+      const pubDate = dateInp ? dateInp.value : '';
+      const pubTime = timeInp ? timeInp.value : '19:00';
+      let currentPublishAt = null;
+      if (pubDate && pubTime) {
+        try {
+          const dt = new Date(pubDate + 'T' + pubTime);
+          if (!isNaN(dt.getTime())) currentPublishAt = dt.toISOString();
+        } catch {}
+      }
+      window.__activePublishAt = currentPublishAt;
+
       try {
         const res = await fetch('/api/episodes/' + epId + '/release-check');
         const check = await res.json();
@@ -701,6 +738,11 @@ export function renderPreviewHtml(
         html += '</div>';
 
         html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
+        html += '<span class="flex items-center gap-2">📅 <span>Scheduled Go-Live</span></span>';
+        html += '<span class="font-bold text-gray-800">' + (currentPublishAt ? new Date(currentPublishAt).toLocaleString() : 'Immediate Private Release') + '</span>';
+        html += '</div>';
+
+        html += '<div class="flex items-center justify-between border-t border-gray-200/60 pt-2">';
         html += '<span class="flex items-center gap-2">🔒 <span>Privacy Setting</span></span>';
         html += '<span class="font-bold text-indigo-700">Private Release (Safe Mode)</span>';
         html += '</div>';
@@ -708,8 +750,12 @@ export function renderPreviewHtml(
         list.innerHTML = html;
 
         if (check.canRelease) {
-          // Request signed proposal from server
-          const propRes = await fetch('/api/episodes/' + epId + '/propose-release', { method: 'POST' });
+          // Request signed proposal from server binding exact publishAt
+          const propRes = await fetch('/api/episodes/' + epId + '/propose-release', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publishAt: currentPublishAt }),
+          });
           const propData = await propRes.json();
           if (propData.success && propData.approvalToken) {
             currentApprovalToken = propData.approvalToken;
@@ -739,22 +785,27 @@ export function renderPreviewHtml(
       const btn = document.getElementById('btnConfirmRelease');
       const msg = document.getElementById('releaseStatusMessage');
       btn.disabled = true;
-      btn.innerText = 'Publishing Privately...';
+      btn.innerText = 'Publishing to YouTube...';
 
       try {
+        const publishAt = window.__activePublishAt || null;
         const res = await fetch('/api/episodes/' + episodeId + '/approve', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Approval-Token': currentApprovalToken || '',
           },
-          body: JSON.stringify({ approvalToken: currentApprovalToken }),
+          body: JSON.stringify({ approvalToken: currentApprovalToken, publishAt }),
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
         msg.className = 'bg-emerald-50 text-emerald-900 border border-emerald-200 p-3 rounded-xl text-xs space-y-1';
-        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video is now private on your channel with ID: <code class="font-mono">' + data.videoId + '</code>.<br/>Status updated to ' + (data.newStatus || 'Scheduled') + ' in Supabase.';
+        const isScheduled = data.newStatus === 'Scheduled' && publishAt;
+        const scheduleNotice = isScheduled
+          ? '<br/>Scheduled to go live on <strong>' + new Date(publishAt).toLocaleString() + '</strong>.'
+          : '<br/>Uploaded privately for manual review.';
+        msg.innerHTML = '<strong>✓ Successfully Published!</strong> Video ID: <code class="font-mono bg-white px-1.5 py-0.5 rounded border border-emerald-300">' + data.videoId + '</code>.' + scheduleNotice + '<br/>Status updated to <strong>' + (data.newStatus || 'Scheduled') + '</strong>.';
         msg.classList.remove('hidden');
 
         btn.innerText = 'Release Published';
@@ -808,6 +859,17 @@ export function renderPreviewHtml(
       });
       document.getElementById('btnDismissResultModal')?.addEventListener('click', () => {
         document.getElementById('studioResultModal')?.classList.add('hidden');
+      });
+
+      document.getElementById('releaseDate')?.addEventListener('change', () => openReleaseRoom(episodeId));
+      document.getElementById('releaseTime')?.addEventListener('change', () => openReleaseRoom(episodeId));
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeReleaseRoom();
+          closeKeyModal();
+          document.getElementById('studioResultModal')?.classList.add('hidden');
+        }
       });
 
       function activateSceneCard(card) {

@@ -128,6 +128,58 @@ export class MissionControlServer {
     };
   }
 
+  private loadRecentActivities(): Array<{
+    id: string;
+    title: string;
+    description: string;
+    receiptId: string;
+    status: 'Verified Pass' | 'Failed' | 'Pending' | 'Active';
+    timestamp: string;
+  }> {
+    const activities: Array<{
+      id: string;
+      title: string;
+      description: string;
+      receiptId: string;
+      status: 'Verified Pass' | 'Failed' | 'Pending' | 'Active';
+      timestamp: string;
+    }> = [];
+
+    const receiptsDir = path.resolve('data', 'evidence_receipts');
+    if (fs.existsSync(receiptsDir)) {
+      try {
+        const files = fs.readdirSync(receiptsDir)
+          .filter(f => f.endsWith('.json'))
+          .map(f => {
+            const p = path.join(receiptsDir, f);
+            return { file: f, path: p, mtime: fs.statSync(p).mtimeMs };
+          })
+          .sort((a, b) => b.mtime - a.mtime)
+          .slice(0, 10);
+
+        for (const item of files) {
+          try {
+            const content = JSON.parse(fs.readFileSync(item.path, 'utf-8'));
+            if (content.receiptId) {
+              const skillName = content.skillId ? content.skillId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'System Operation';
+              const isPass = content.status === 'SUCCESS';
+              activities.push({
+                id: content.receiptId,
+                title: `${skillName} Execution`,
+                description: `Executed for mission ${content.missionId || 'creator-pipeline'} (${content.totalDurationMs || 0}ms)`,
+                receiptId: content.receiptId,
+                status: isPass ? 'Verified Pass' : 'Failed',
+                timestamp: content.completedAt || content.startedAt || new Date(item.mtime).toISOString(),
+              });
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    return activities;
+  }
+
   public async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url || '/', `http://localhost:${this.port}`);
     const method = req.method || 'GET';
@@ -147,8 +199,9 @@ export class MissionControlServer {
         const metrics = this.bridge.computePipelineMetrics(episodes);
         const skills = this.skillRegistry.listSkills();
         const exports = this.exportWatcher.listExportedVideos();
+        const recentActivities = this.loadRecentActivities();
 
-        const html = renderDashboardHtml(episodes, metrics, channel, skills, exports, selectedEpId, initialTab);
+        const html = renderDashboardHtml(episodes, metrics, channel, skills, exports, selectedEpId, initialTab, recentActivities);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
       } catch (err: any) {
@@ -479,13 +532,21 @@ export class MissionControlServer {
           return;
         }
 
+        let validatedPublishAt: string | null = null;
+        if (bodyObj.publishAt) {
+          const parsed = new Date(bodyObj.publishAt);
+          if (!isNaN(parsed.getTime())) {
+            validatedPublishAt = parsed.toISOString();
+          }
+        }
+
         const { proposal, approvalToken } = await this.approvalManager.createReleaseProposal({
           episodeId,
           title: episode.title,
           videoFilePath: exported.filePath,
           destinationChannelId: channel.channelId || 'default-channel',
           destinationChannelTitle: channel.title || 'YouTube Channel',
-          publishAt: bodyObj.publishAt || null,
+          publishAt: validatedPublishAt,
           requireThumbnail: bodyObj.requireThumbnail ?? false,
           thumbnailFilePath: bodyObj.thumbnailFilePath,
           approvedByUserId: auth.session?.userId || 'unknown-caller',
@@ -975,6 +1036,7 @@ export class MissionControlServer {
     if (method === 'POST' && url.pathname === '/api/teach/record/video') {
       const auth = this.checkAuth(req, res, 'approve');
       if (!auth.authorized) return;
+      let tempPath: string | null = null;
       let targetPath: string | null = null;
       try {
         const rawSessionId = url.searchParams.get('sessionId') || `rec_${Date.now()}`;
@@ -993,9 +1055,12 @@ export class MissionControlServer {
           return;
         }
 
+        const tempFileName = `${rawSessionId}.${crypto.randomUUID()}.tmp`;
+        tempPath = path.resolve(recordingsDir, tempFileName);
+
         const MAX_BYTES = 500 * 1024 * 1024; // 500 MB limit
         let bytesWritten = 0;
-        const fileStream = fs.createWriteStream(targetPath);
+        const fileStream = fs.createWriteStream(tempPath);
 
         await new Promise<void>((resolve, reject) => {
           let aborted = false;
@@ -1005,15 +1070,15 @@ export class MissionControlServer {
               aborted = true;
               req.destroy(new Error('Payload Too Large: Stream exceeded 500 MB limit.'));
               fileStream.destroy();
-              if (targetPath && fs.existsSync(targetPath)) {
-                try { fs.unlinkSync(targetPath); } catch {}
+              if (tempPath && fs.existsSync(tempPath)) {
+                try { fs.unlinkSync(tempPath); } catch {}
               }
             }
           });
 
           fileStream.on('error', (err) => {
-            if (targetPath && fs.existsSync(targetPath)) {
-              try { fs.unlinkSync(targetPath); } catch {}
+            if (tempPath && fs.existsSync(tempPath)) {
+              try { fs.unlinkSync(tempPath); } catch {}
             }
             reject(err);
           });
@@ -1025,6 +1090,24 @@ export class MissionControlServer {
           req.pipe(fileStream);
         });
 
+        if (!fs.existsSync(tempPath)) {
+          throw new Error('Recording temp file was not created or was removed.');
+        }
+
+        const actualSize = fs.statSync(tempPath).size;
+        if (actualSize !== bytesWritten || bytesWritten === 0) {
+          try { fs.unlinkSync(tempPath); } catch {}
+          throw new Error(`Integrity check failed: written bytes (${bytesWritten}) does not match final file size (${actualSize})`);
+        }
+
+        // Atomic rename from temp to destination file
+        try {
+          fs.renameSync(tempPath, targetPath);
+        } catch {
+          fs.copyFileSync(tempPath, targetPath);
+          try { fs.unlinkSync(tempPath); } catch {}
+        }
+
         const sizeMb = Math.round((bytesWritten / (1024 * 1024)) * 100) / 100;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -1032,13 +1115,46 @@ export class MissionControlServer {
           sessionId: rawSessionId,
           byteCount: bytesWritten,
           sizeMb,
+          url: `/api/teach/record/video?sessionId=${encodeURIComponent(rawSessionId)}`,
         }));
       } catch (err: any) {
-        if (targetPath && fs.existsSync(targetPath)) {
-          try { fs.unlinkSync(targetPath); } catch {}
+        if (tempPath && fs.existsSync(tempPath)) {
+          try { fs.unlinkSync(tempPath); } catch {}
         }
         const isTooLarge = err.message?.includes('500 MB') || err.message?.includes('Payload Too Large');
         res.writeHead(isTooLarge ? 413 : 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/teach/record/video') {
+      const auth = this.checkAuth(req, res, 'read');
+      if (!auth.authorized) return;
+      try {
+        const rawSessionId = url.searchParams.get('sessionId') || '';
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(rawSessionId)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid sessionId parameter.' }));
+          return;
+        }
+        const recordingsDir = path.resolve('data', 'recordings');
+        const targetPath = path.resolve(recordingsDir, `${rawSessionId}.webm`);
+        if (!targetPath.startsWith(recordingsDir + path.sep) || !fs.existsSync(targetPath)) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Recorded video not found.' }));
+          return;
+        }
+
+        const stat = fs.statSync(targetPath);
+        res.writeHead(200, {
+          'Content-Length': stat.size,
+          'Content-Type': 'video/webm',
+          'Content-Disposition': `attachment; filename="${rawSessionId}.webm"`,
+        });
+        fs.createReadStream(targetPath).pipe(res);
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       }
       return;
