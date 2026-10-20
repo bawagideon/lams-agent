@@ -19,6 +19,7 @@ async function runAllTests() {
   console.log('================================================================\n');
 
   const startTime = Date.now();
+  const initialSkillsContent = fs.existsSync('data/custom_skills.json') ? fs.readFileSync('data/custom_skills.json', 'utf-8') : null;
 
   // Environment and Git Context
   const gitCommit = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8' }).stdout?.trim() || 'unknown';
@@ -93,6 +94,13 @@ async function runAllTests() {
 
   const totalDuration = Date.now() - startTime;
   const allPassed = results.every(r => r.passed);
+
+  // Restore initial state of tracked files to prevent test residue in working tree
+  if (initialSkillsContent !== null) {
+    try {
+      fs.writeFileSync('data/custom_skills.json', initialSkillsContent, 'utf-8');
+    } catch {}
+  }
 
   console.log('================================================================');
   console.log('                   AUTOMATION AUDIT SUMMARY RECEIPT             ');
