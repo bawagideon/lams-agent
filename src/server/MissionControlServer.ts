@@ -912,6 +912,56 @@ export class MissionControlServer {
       return;
     }
 
+    // 13b. API: Serve Auto-Generated UI Demo Videos
+    if (method === 'GET' && url.pathname.startsWith('/api/demos/')) {
+      const fileName = decodeURIComponent(url.pathname.replace('/api/demos/', '')).replace(/[^a-zA-Z0-9_\-\.]/g, '');
+      const demosDir = path.resolve('output', 'demo_videos');
+      const filePath = path.join(demosDir, fileName);
+
+      if (!filePath.startsWith(demosDir) || !fs.existsSync(filePath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Demo video not found');
+        return;
+      }
+
+      const stat = fs.statSync(filePath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+      const contentType = fileName.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (isNaN(start) || isNaN(end) || start < 0 || end < start || start >= fileSize) {
+          res.writeHead(416, {
+            'Content-Range': `bytes */${fileSize}`,
+            'Content-Type': 'text/plain',
+          });
+          res.end('416 Requested Range Not Satisfiable');
+          return;
+        }
+
+        const chunkSize = end - start + 1;
+        const file = fs.createReadStream(filePath, { start, end });
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': contentType,
+        });
+        file.pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': contentType,
+        });
+        fs.createReadStream(filePath).pipe(res);
+      }
+      return;
+    }
+
     // 14. API: Creator Assistant Chat with Plan Cards
     if (method === 'POST' && url.pathname === '/api/chat') {
       const auth = this.checkAuth(req, res, 'read');

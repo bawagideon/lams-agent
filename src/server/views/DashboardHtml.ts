@@ -3,6 +3,7 @@ import type { ChannelProfile } from '../../adapters/youtube/YouTubeLiveClient.ts
 import type { SkillContract } from '../../contracts/SkillContract.ts';
 import type { ExportedVideoFile } from '../../adapters/media/ExportFolderWatcher.ts';
 import { escapeHtml } from '../utils/htmlEscape.ts';
+import { FEATURE_REGISTRY } from '../../config/FeatureRegistry.ts';
 
 export interface ActivityFeedItem {
   id: string;
@@ -244,6 +245,33 @@ export function renderDashboardHtml(
       <div>
         <h1 class="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">${escapeHtml(greeting)}, Lams</h1>
         <p class="text-xs md:text-sm text-gray-500 mt-1">${escapeHtml(subtitle)}</p>
+      </div>
+
+      <!-- First-Use Coachmarks Banner -->
+      <div id="coachmarksBanner" class="bg-gradient-to-r from-indigo-950 via-indigo-900 to-purple-950 text-white rounded-3xl p-5 md:p-6 shadow-md border border-indigo-800/40 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="space-y-1.5 max-w-2xl">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 px-2.5 py-0.5 rounded-full">Creator Quickstart</span>
+            <span class="text-xs text-indigo-300">3 simple steps to your next automated episode</span>
+          </div>
+          <h3 class="text-base md:text-lg font-bold text-white tracking-tight">How LAMS automates your channel workflow</h3>
+          <p class="text-xs text-indigo-200 leading-relaxed">
+            1. <strong>Watch the scenes</strong> to verify AI generations.
+            2. <strong>Assemble in CapCut</strong> to generate draft timelines automatically.
+            3. <strong>Release Room</strong> checks all preflight safety gates before private upload.
+          </p>
+        </div>
+        <div class="flex items-center gap-2.5 flex-shrink-0">
+          <button id="btnDemoCapcut" data-demo-video="/api/demos/capcut_assembly_demo.webm" data-demo-title="CapCut Timeline Assembly Demo" type="button" class="btn-demo-trigger bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl transition border border-white/20 flex items-center gap-1.5 cursor-pointer">
+            <span>🎬</span> CapCut Demo
+          </button>
+          <button id="btnDemoRelease" data-demo-video="/api/demos/release_room_demo.webm" data-demo-title="Safe Mode Publishing Demo" type="button" class="btn-demo-trigger bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3.5 py-2.5 rounded-xl transition border border-white/20 flex items-center gap-1.5 cursor-pointer">
+            <span>🎬</span> Release Demo
+          </button>
+          <button id="btnDismissCoachmarks" type="button" class="bg-white hover:bg-indigo-50 text-indigo-950 text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-xs cursor-pointer">
+            Got it
+          </button>
+        </div>
       </div>
 
       <!-- SECTION: Next up (Hero Card) -->
@@ -548,6 +576,9 @@ export function renderDashboardHtml(
           
           <!-- Action Controls -->
           <div class="flex items-center gap-2 flex-wrap">
+            <button id="btnDemoTeach" data-demo-video="/api/demos/teach_mode_demo.webm" data-demo-title="Demonstration Studio Walkthrough" type="button" class="btn-demo-trigger text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-xs font-semibold px-3.5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer">
+              <span>🎬</span> Watch Demo
+            </button>
             <button id="btnStartCapture" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition shadow-sm flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-white"></span>
               <span>Start Screen Capture</span>
@@ -937,6 +968,9 @@ export function renderDashboardHtml(
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <button id="btnDemoChat" data-demo-video="/api/demos/assistant_chat_demo.webm" data-demo-title="Creator Assistant Chat Demo" type="button" class="btn-demo-trigger text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-semibold px-2 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer" title="Watch Assistant Demo">
+          <span>🎬</span> Demo
+        </button>
         <button id="btnClearChat" class="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg text-xs" title="Clear chat">↺</button>
         <button id="btnCloseChat" class="lg:hidden text-gray-400 hover:text-gray-700 p-1.5 rounded-lg text-sm font-bold" title="Close assistant">✕</button>
       </div>
@@ -1233,6 +1267,38 @@ export function renderDashboardHtml(
         </button>
         <button id="btnConfirmSkillApproval" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
           <span>✓ Approve & Execute</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 5C. FEATURE DEMO VIDEO MODAL (Automated Screen Walkthroughs) -->
+  <!-- ============================================================ -->
+  <div id="demoVideoModal" role="dialog" aria-modal="true" aria-labelledby="demoVideoTitle" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="bg-white max-w-2xl w-full p-5 rounded-3xl border border-gray-200 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">🎬</span>
+          <div>
+            <h3 id="demoVideoTitle" class="text-base font-bold text-gray-900">Feature Walkthrough</h3>
+            <p id="demoVideoSubtitle" class="text-xs text-gray-500">Watch the automated workflow in action</p>
+          </div>
+        </div>
+        <button id="btnCloseDemoModal" type="button" class="text-gray-400 hover:text-gray-600 text-lg font-bold p-1 rounded-lg transition cursor-pointer" title="Close video">✕</button>
+      </div>
+
+      <div class="relative bg-slate-900 rounded-2xl overflow-hidden aspect-video shadow-inner flex items-center justify-center">
+        <video id="demoVideoPlayer" class="w-full h-full object-contain" controls playsinline preload="metadata">
+          <source id="demoVideoSource" src="" type="video/webm">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+
+      <div class="flex items-center justify-between pt-1">
+        <span id="demoVideoHint" class="text-[11px] text-gray-500">Recorded directly from automated Playwright test sessions.</span>
+        <button id="btnDismissDemoModal" data-feature-id="btnCloseDemoModal" type="button" onclick="closeDemoModal()" class="bg-[#4338ca] hover:bg-[#3730a3] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer">
+          Done Watching
         </button>
       </div>
     </div>
@@ -2489,6 +2555,28 @@ export function renderDashboardHtml(
       pendingRunApprovalToken = null;
     }
 
+    function openDemoModal(videoUrl, title) {
+      const modal = document.getElementById('demoVideoModal');
+      const player = document.getElementById('demoVideoPlayer');
+      const titleEl = document.getElementById('demoVideoTitle');
+      if (!modal || !player) return;
+      if (title && titleEl) titleEl.innerText = title;
+      player.src = videoUrl;
+      modal.classList.remove('hidden');
+      player.play().catch(() => {});
+    }
+
+    function closeDemoModal() {
+      const modal = document.getElementById('demoVideoModal');
+      const player = document.getElementById('demoVideoPlayer');
+      if (player) {
+        player.pause();
+        player.currentTime = 0;
+        player.removeAttribute('src');
+      }
+      modal?.classList.add('hidden');
+    }
+
     // Centralized DOM Event Listeners & Event Delegation
     document.addEventListener('DOMContentLoaded', () => {
       // Mobile Drawer Navigation Controls
@@ -2750,8 +2838,118 @@ export function renderDashboardHtml(
           closeReleaseRoom();
           closeTeachModal();
           closeSkillApprovalModal();
+          closeDemoModal();
+          hideTooltip();
           document.getElementById('studioResultModal')?.classList.add('hidden');
         }
+      });
+
+      // Feature Demo Video Controls
+      document.querySelectorAll('.btn-demo-trigger').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const videoUrl = btn.getAttribute('data-demo-video');
+          const title = btn.getAttribute('data-demo-title') || 'Feature Walkthrough';
+          if (videoUrl) openDemoModal(videoUrl, title);
+        });
+      });
+
+      document.getElementById('btnCloseDemoModal')?.addEventListener('click', closeDemoModal);
+      document.getElementById('demoVideoModal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'demoVideoModal') closeDemoModal();
+      });
+
+      // Coachmarks Dismissal
+      const coachmarks = document.getElementById('coachmarksBanner');
+      if (localStorage.getItem('lams_coachmarks_dismissed') === '1') {
+        coachmarks?.classList.add('hidden');
+      }
+      document.getElementById('btnDismissCoachmarks')?.addEventListener('click', () => {
+        localStorage.setItem('lams_coachmarks_dismissed', '1');
+        coachmarks?.classList.add('hidden');
+      });
+
+      // Feature Registry & Accessible Tooltip Controller
+      const FEATURE_REGISTRY_MAP = ${JSON.stringify(
+        Object.fromEntries(
+          Object.entries(FEATURE_REGISTRY).map(([k, v]) => [
+            k,
+            {
+              label: v.label,
+              purpose: v.purpose,
+              outcome: v.outcome,
+              shortcut: v.keyboardShortcut || null,
+            }
+          ])
+        )
+      )};
+
+      const tooltipEl = document.getElementById('accessibleTooltip');
+      const tooltipLabel = document.getElementById('tooltipLabel');
+      const tooltipShortcut = document.getElementById('tooltipShortcut');
+      const tooltipPurpose = document.getElementById('tooltipPurpose');
+      const tooltipOutcome = document.getElementById('tooltipOutcome');
+      let tooltipTimeout = null;
+
+      function showTooltipForElement(el) {
+        if (!tooltipEl || !el) return;
+        const featureId = el.getAttribute('data-feature-id') || el.id;
+        const feature = featureId ? FEATURE_REGISTRY_MAP[featureId] : null;
+        if (!feature) return;
+
+        if (tooltipLabel) tooltipLabel.textContent = feature.label;
+        if (tooltipPurpose) tooltipPurpose.textContent = feature.purpose;
+        if (tooltipOutcome) tooltipOutcome.textContent = feature.outcome;
+        if (tooltipShortcut) {
+          if (feature.shortcut) {
+            tooltipShortcut.textContent = feature.shortcut;
+            tooltipShortcut.classList.remove('hidden');
+          } else {
+            tooltipShortcut.classList.add('hidden');
+          }
+        }
+
+        const rect = el.getBoundingClientRect();
+        const tooltipWidth = 280;
+        let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+        let top = rect.bottom + 8;
+
+        if (left < 10) left = 10;
+        if (left + tooltipWidth > window.innerWidth - 10) {
+          left = window.innerWidth - tooltipWidth - 10;
+        }
+        if (top + 130 > window.innerHeight) {
+          top = Math.max(10, rect.top - 120);
+        }
+
+        tooltipEl.style.left = left + 'px';
+        tooltipEl.style.top = top + 'px';
+        tooltipEl.style.width = tooltipWidth + 'px';
+        tooltipEl.classList.remove('hidden');
+        tooltipEl.setAttribute('aria-hidden', 'false');
+      }
+
+      function hideTooltip() {
+        if (tooltipTimeout) clearTimeout(tooltipTimeout);
+        if (tooltipEl) {
+          tooltipEl.classList.add('hidden');
+          tooltipEl.setAttribute('aria-hidden', 'true');
+        }
+      }
+
+      window.hideTooltip = hideTooltip;
+
+      // Attach tooltip triggers across all registered buttons & action controls
+      document.querySelectorAll('[data-feature-id], button[id], a[id]').forEach(el => {
+        const fid = el.getAttribute('data-feature-id') || el.id;
+        if (!fid || !FEATURE_REGISTRY_MAP[fid]) return;
+
+        el.addEventListener('mouseenter', () => {
+          tooltipTimeout = setTimeout(() => showTooltipForElement(el), 300);
+        });
+        el.addEventListener('mouseleave', hideTooltip);
+        el.addEventListener('focus', () => showTooltipForElement(el));
+        el.addEventListener('blur', hideTooltip);
       });
 
       // Preset Buttons
@@ -2789,6 +2987,21 @@ export function renderDashboardHtml(
       });
     });
   </script>
+
+  <!-- ============================================================ -->
+  <!-- ACCESSIBLE FLOATING TOOLTIP / POPOVER                         -->
+  <!-- ============================================================ -->
+  <div id="accessibleTooltip" role="tooltip" aria-hidden="true" class="pointer-events-none fixed z-[9999] hidden max-w-xs rounded-xl bg-slate-900/95 text-white p-3 shadow-2xl backdrop-blur-md border border-slate-700/70 transition-opacity duration-150 text-xs">
+    <div class="font-bold text-indigo-300 flex items-center justify-between gap-2 mb-1">
+      <span id="tooltipLabel">Feature Name</span>
+      <kbd id="tooltipShortcut" class="hidden bg-slate-800 text-[10px] px-1.5 py-0.5 rounded border border-slate-700 font-mono text-slate-300"></kbd>
+    </div>
+    <p id="tooltipPurpose" class="text-slate-200 text-[11px] leading-relaxed mb-1.5"></p>
+    <div class="text-[10px] text-slate-400 border-t border-slate-800/80 pt-1.5 flex items-start gap-1">
+      <span class="text-emerald-400 font-bold shrink-0">Outcome:</span>
+      <span id="tooltipOutcome" class="text-slate-300"></span>
+    </div>
+  </div>
 </body>
 </html>
 `;
